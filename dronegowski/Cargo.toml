@@ -5,12 +5,15 @@ edition = "2021"
 
 [dependencies]
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["serialize"] }
-
-[dev-dependencies]
 toml = "0.8.19"
 crossbeam-channel = "0.5.13"
 
 [[example]]
 name = "parser"
 path = "examples/config/parser.rs"
+required-features = ["wg_2024/serialize"]
+
+[[example]]
+name = "drone_usage"
+path = "examples/drone/drone_usage.rs"
 required-features = ["wg_2024/serialize"] # Specifica correttamente la feature dipendente
