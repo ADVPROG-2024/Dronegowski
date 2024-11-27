@@ -47,7 +47,7 @@ impl Drone for MyDrone {
                 }
                 recv(self.packet_recv) -> packet => {
                     if let Ok(packet) = packet {
-                        println!("Drone {} ha ricevuto pacchetto: {:?}", self.id, packet);
+                        println!("Drone {} ha ricevuto il pacchetto: {:?}", self.id, packet);
                         self.handle_packet(packet);
                     }
                 },
