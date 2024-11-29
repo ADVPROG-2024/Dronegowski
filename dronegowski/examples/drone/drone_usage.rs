@@ -190,5 +190,5 @@ fn main() {
     while let Some(handle) = handles.pop() {
         handle.join().unwrap();
     }
-    println!("Simulazione terminata.");
+    return;
 }

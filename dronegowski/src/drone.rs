@@ -16,7 +16,6 @@ pub struct DroneOptions {
 }
 
 /// This is the drone interface.
-/// Each drone's group must implement it
 pub trait Drone {
     /// The list packet_send would be crated empty inside new.
     /// Other nodes are added by sending command
