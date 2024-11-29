@@ -188,6 +188,7 @@ fn main() {
 
     println!("In attesa della terminazione dei droni...");
     while let Some(handle) = handles.pop() {
+        //todo!("da fixare la terminazione dei droni dopo il comando exit");
         handle.join().unwrap();
     }
     return;
