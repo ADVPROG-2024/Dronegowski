@@ -1,12 +1,8 @@
 mod common;
 
 use common::default_drone;
-use crossbeam_channel::unbounded;
 use dronegowski::MyDrone;
 use std::collections::HashMap;
-use std::{fs, thread};
-use wg_2024::config::Config;
-// use wg_2024::controller::{DroneCommand, NodeEvent};
 use wg_2024::drone::{Drone, DroneOptions};
 use wg_2024::packet::Packet;
 
