@@ -50,35 +50,74 @@ impl Drone for MyDrone {
             select! {
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(packet) = packet_res {
-                        match packet.pack_type {
-                            PacketType::Ack(_) | PacketType::Nack(_) => unimplemented!(), // bisogna inoltare il pacchetto
-                            PacketType::MsgFragment(ref fragment) => {
-                                if self.drop_packet() {
-                                    match self.forward_packet(self.packet_nack(packet.clone(), Nack {fragment_index: fragment.fragment_index, nack_type: NackType::Dropped})) {
-                                        Ok(()) => {
-                                            // Nack packet inviato correttamente al prossimo nodo
-                                            println!("Nack packet inviato correttamente al prossimo nodo");
-                                        },
-                                        Err(err) => {
-                                            panic!("{err:?}");
-                                        },
-                                    }
-                                } else {
-                                    match self.forward_packet(packet.clone()) {
-                                        Ok(()) => {
-                                            // frammento inoltrato correttamente
-                                            println!("frammento inoltrato correttamente");
-                                        },
-                                        Err(err) => {
-                                            // creare il pacchetto di errore da mandare indietro tramite gli hop
-                                            panic!("{err:?}");
-                                            unimplemented!();
+                        if let Some(node_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
+                            if *node_id == self.id {
+                                match packet.pack_type {
+                                    PacketType::Ack(_) | PacketType::Nack(_) => {
+                                        match self.forward_packet(packet.clone()) {
+                                            Ok(()) => {
+                                                // Ack || Nack inoltrato correttamente
+                                            },
+                                            Err(nack) => {
+                                                // Nack: ErrorInRouting || DestinationIsDrone
+                                                match self.forward_packet(self.packet_nack(packet.clone(), nack)) {
+                                                    Ok(()) => {
+                                                        // Nack packet inviato correttamente al prossimo nodo
+                                                    },
+                                                    Err(err) => {
+                                                        panic!("{err:?}");
+                                                    },
+                                                }
+                                            }
+                                        }
+                                    }, // bisogna inoltare il pacchetto
+                                    PacketType::MsgFragment(ref fragment) => {
+                                        // Verifica se il pacchetto deve essere droppato per il DPR
+                                        if self.drop_packet() {
+                                            // Nack: Dropped
+                                            match self.forward_packet(self.packet_nack(packet.clone(), Nack {fragment_index: fragment.fragment_index, nack_type: NackType::Dropped})) {
+                                                Ok(()) => {
+                                                    // Nack packet inviato correttamente al prossimo nodo
+                                                    println!("Nack packet inviato correttamente al prossimo nodo");
+                                                },
+                                                Err(err) => {
+                                                    panic!("{err:?}");
+                                                },
+                                            }
+                                        } else {
+                                            match self.forward_packet(packet.clone()) {
+                                                Ok(()) => {
+                                                    // frammento inoltrato correttamente
+                                                    println!("frammento inoltrato correttamente");
+                                                },
+                                                Err(nack) => {
+                                                    // Nack: ErrorInRouting || DestinationIsDrone
+                                                    match self.forward_packet(self.packet_nack(packet.clone(), nack)) {
+                                                        Ok(()) => {
+                                                            // Nack packet inviato correttamente al prossimo nodo
+                                                        },
+                                                        Err(err) => {
+                                                            panic!("{err:?}");
+                                                        },
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
+                                    PacketType::FloodRequest(floodRequest) => unimplemented!(),
+                                    PacketType::FloodResponse(floodResponse) => unimplemented!(),
+                                }
+                            } else {
+                                // Nack: UnexpectedRecipient
+                                match self.forward_packet(self.packet_nack(packet.clone(), Nack {fragment_index: 0, nack_type: NackType::UnexpectedRecipient(self.id)})) {
+                                    Ok(()) => {
+                                        // Nack packet inviato correttamente al prossimo nodo
+                                    },
+                                    Err(err) => {
+                                        panic!("{err:?}");
+                                    },
                                 }
                             }
-                            PacketType::FloodRequest(floodRequest) => unimplemented!(),
-                            PacketType::FloodResponse(floodResponse) => unimplemented!(),
                         }
                     }
                 },
@@ -94,7 +133,7 @@ impl Drone for MyDrone {
                                 break;
                             },
                             DroneCommand::AddSender(node_id, sender) => {
-                                self.add_sender(node_id, sender);
+                                self.add_sender(node_id, sender).expect("Sender already present!");
                             },
                             _ => {
 
@@ -158,8 +197,16 @@ impl MyDrone {
         Err("Incorrect value of PDR".to_string())
     }
 
-    fn add_sender(&mut self, node_id: NodeId, sender: Sender<Packet>) {
-        self.packet_send.insert(node_id, sender);
+    fn add_sender(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
+        if self.packet_send.contains_key(&node_id) {
+            Err(format!(
+                "Sender per il nodo {} è già presente nella mappa!",
+                node_id
+            ))
+        } else {
+            self.packet_send.insert(node_id, sender);
+            Ok(())
+        }
     }
 
     fn drop_packet(&self) -> bool {
