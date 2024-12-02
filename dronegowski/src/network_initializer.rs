@@ -1,15 +1,15 @@
-use crossbeam_channel::{unbounded, Receiver, Sender};
 use crate::MyDrone;
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::thread;
+use thiserror::Error;
 use wg_2024::config::Config;
 use wg_2024::controller::{DroneCommand, NodeEvent};
-use wg_2024::drone::{Drone, DroneOptions};
+use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
-use thiserror::Error;
 
 /// Parsing del file di configurazione TOML.
 pub fn parse_config(file: &str) -> Config {
@@ -25,7 +25,7 @@ fn test_initialization() {
     match validate_config(&config) {
         Ok(_) => println!("Config validation passed!"),
         Err(e) => {
-            println!("Config validation failed: {:?}", e);
+            println!("Config validation failed: {e:?}");
             panic!("Validation failed.");
         }
     }
@@ -34,18 +34,18 @@ fn test_initialization() {
     let mut controller_drones: HashMap<NodeId, Sender<DroneCommand>> = HashMap::new();
     let mut packet_channels: HashMap<NodeId, (Sender<Packet>, Receiver<Packet>)> = HashMap::new();
 
-    for drone in config.drone.iter() {
+    for drone in &config.drone {
         packet_channels.insert(drone.id, unbounded());
     }
-    for client in config.client.iter() {
+    for client in &config.client {
         packet_channels.insert(client.id, unbounded());
     }
-    for server in config.server.iter() {
+    for server in &config.server {
         packet_channels.insert(server.id, unbounded());
     }
     let mut handles = Vec::new();
 
-    for drone in config.drone.into_iter() {
+    for drone in config.drone {
         let (controller_drone_send, controller_drone_recv) = unbounded();
         controller_drones.insert(drone.id, controller_drone_send.clone());
         let node_event_send = node_event_send.clone();
@@ -58,14 +58,14 @@ fn test_initialization() {
             .collect();
 
         handles.push(thread::spawn(move || {
-            let mut drone = MyDrone::new(DroneOptions {
+            let mut drone = MyDrone {
                 id: drone.id,
-                controller_recv: controller_drone_recv,
-                controller_send: node_event_send,
+                sim_controller_recv: controller_drone_recv,
+                sim_controller_send: node_event_send,
                 packet_recv,
                 packet_send,
                 pdr: drone.pdr,
-            });
+            };
 
             drone.run();
         }));
@@ -168,5 +168,3 @@ fn dfs(node: NodeId, graph: &HashMap<NodeId, HashSet<NodeId>>, visited: &mut Has
         }
     }
 }
-
-

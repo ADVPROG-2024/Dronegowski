@@ -1,8 +1,9 @@
 use crossbeam_channel::{select, Receiver, Sender};
+use rand::Rng;
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, NodeEvent};
-use wg_2024::drone::{Drone, DroneOptions};
-use wg_2024::network::NodeId;
+use wg_2024::drone::Drone;
+use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Nack, NackType, Packet, PacketType};
 
 #[derive(Debug, Clone)]
@@ -16,26 +17,30 @@ pub struct MyDrone {
 }
 
 impl Drone for MyDrone {
-    fn new(options: DroneOptions) -> Self {
+    fn new(
+        id: NodeId,
+        controller_send: Sender<NodeEvent>,
+        controller_recv: Receiver<DroneCommand>,
+        packet_recv: Receiver<Packet>,
+        packet_send: HashMap<NodeId, Sender<Packet>>,
+        pdr: f32,
+    ) -> Self {
         assert!(
-            !options.packet_send.contains_key(&options.id),
+            !packet_send.contains_key(&id),
             "neighbor with id {} which is the same as drone",
-            options.id
+            id
         );
-        assert!(
-            !(options.pdr > 1.0 || options.pdr < 0.0),
-            "pdr out of bounds"
-        );
+        assert!(!(pdr > 1.0 || pdr < 0.0), "pdr out of bounds");
 
-        println!("Drone {} creato con PDR: {}", options.id, options.pdr);
+        println!("Drone {} creato con PDR: {}", id, pdr);
 
         Self {
-            id: options.id,
-            sim_controller_send: options.controller_send,
-            sim_controller_recv: options.controller_recv,
-            packet_recv: options.packet_recv,
-            pdr: options.pdr,
-            packet_send: options.packet_send,
+            id,
+            sim_controller_send: controller_send,
+            sim_controller_recv: controller_recv,
+            packet_recv,
+            packet_send,
+            pdr,
         }
     }
 
@@ -46,20 +51,32 @@ impl Drone for MyDrone {
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(packet) = packet_res {
                         match packet.pack_type {
-                            PacketType::Ack(_) | PacketType::Nack(_) => unimplemented!(),
+                            PacketType::Ack(_) | PacketType::Nack(_) => unimplemented!(), // bisogna inoltare il pacchetto
                             PacketType::MsgFragment(ref fragment) => {
-                                // da aggiungere il drop del pacchetto in base al DRP
-                                match self.forward_packet(packet.clone()) {
-                                    Ok(()) => {
-                                        // frammento inoltrato correttamente
-                                    },
-                                    Err(err) => {
-                                        // creare il pacchetto di errore da mandare indietro tramite gli hop
-                                        panic!("{:?}", err);
-                                        unimplemented!();
+                                if self.drop_packet() {
+                                    // pacchetto droppato quindi...
+                                    match self.forward_packet(self.packet_nack(packet.clone(), Nack {fragment_index: fragment.fragment_index, nack_type: NackType::Dropped})) {
+                                        Ok(()) => {
+                                            // Nack packet inviato correttamente al prossimo nodo
+                                            println!("Nack packet inviato correttamente al prossimo nodo");
+                                        },
+                                        Err(err) => {
+                                            panic!("{err:?}");
+                                        },
+                                    }
+                                } else {
+                                    match self.forward_packet(packet.clone()) {
+                                        Ok(()) => {
+                                            // frammento inoltrato correttamente
+                                            println!("frammento inoltrato correttamente");
+                                        },
+                                        Err(err) => {
+                                            // creare il pacchetto di errore da mandare indietro tramite gli hop
+                                            panic!("{err:?}");
+                                            unimplemented!();
+                                        }
                                     }
                                 }
-
                             }
                             PacketType::FloodRequest(floodRequest) => unimplemented!(),
                             PacketType::FloodResponse(floodResponse) => unimplemented!(),
@@ -78,8 +95,11 @@ impl Drone for MyDrone {
                                 break;
                             },
                             DroneCommand::AddSender(node_id, sender) => {
-                                self.add_channel(node_id, sender);
+                                self.add_sender(node_id, sender);
                             },
+                            _ => {
+
+                            }
                         }
                     }
                 }
@@ -91,7 +111,7 @@ impl Drone for MyDrone {
 
 impl MyDrone {
     // Metodo per inviare pacchetti al prossimo nodo presente nell'hops
-    fn forward_packet(&self, mut packet: Packet) -> Result<(), Nack> {
+    pub fn forward_packet(&self, mut packet: Packet) -> Result<(), Nack> {
         packet.routing_header.hop_index += 1;
 
         let next_hop = packet
@@ -129,7 +149,7 @@ impl MyDrone {
         }
     }
 
-    fn set_pdr(&mut self, pdr: f32) -> Result<(), String> {
+    pub fn set_pdr(&mut self, pdr: f32) -> Result<(), String> {
         if pdr > 0.0 && pdr < 1.0 {
             println!("Drone {}: modificato PDR, {} -> {}", self.id, self.pdr, pdr);
             self.pdr = pdr;
@@ -139,7 +159,39 @@ impl MyDrone {
         Err("Incorrect value of PDR".to_string())
     }
 
-    fn add_channel(&mut self, node_id: NodeId, sender: Sender<Packet>) {
+    fn add_sender(&mut self, node_id: NodeId, sender: Sender<Packet>) {
         self.packet_send.insert(node_id, sender);
+    }
+
+    fn drop_packet(&self) -> bool {
+        let mut rng = rand::rng();
+        let n: f32 = rng.random_range(0.0..=1.0);
+        if n < self.pdr {
+            return true;
+        }
+        false
+    }
+
+    fn packet_nack(&self, packet: Packet, nack: Nack) -> Packet {
+        // path fino al source node
+        let rev_path = packet
+            .routing_header
+            .hops
+            .split_at(packet.routing_header.hop_index)
+            .0
+            .iter()
+            .rev()
+            .copied()
+            .collect();
+
+        // Packet con Nack
+        Packet {
+            pack_type: PacketType::Nack(nack),
+            routing_header: SourceRoutingHeader {
+                hop_index: 0,
+                hops: rev_path,
+            },
+            session_id: packet.session_id,
+        }
     }
 }
