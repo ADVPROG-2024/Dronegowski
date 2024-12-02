@@ -1,4 +1,4 @@
-use crossbeam_channel::{select, select_biased, Receiver, Sender};
+use crossbeam_channel::{select, Receiver, Sender};
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, NodeEvent};
 use wg_2024::drone::{Drone, DroneOptions};
@@ -35,7 +35,7 @@ impl Drone for MyDrone {
             sim_controller_recv: options.controller_recv,
             packet_recv: options.packet_recv,
             pdr: options.pdr,
-            packet_send: HashMap::new(),
+            packet_send: options.packet_send, // Corretto: usa il packet_send passato
         }
     }
 
@@ -53,23 +53,44 @@ impl Drone for MyDrone {
                 },
                 recv(self.sim_controller_recv) -> command_res => {
                     if let Ok(command) = command_res {
-                        println!("Drone {}: Ricevuto un comando {:?}", self.id, command);
-                        if let DroneCommand::Crash = command {
-                            println!("Drone {}: Ricevuto comando di terminazione. Esco...", self.id);
-                            break;
-                        }
-                        if let DroneCommand::SetPacketDropRate(a) = command {
-                            self.pdr = a;
-                            println!("Drone {}: Aggiornato il PDR!", self.id);
+                        match command {
+                            DroneCommand::SetPacketDropRate(pdr) => {
+                                if let Err(err) = self.set_pdr(pdr) {
+                                    println!("Errore nel drone {}: {}", self.id, err);
+                                }
+                            },
+                            DroneCommand::Crash => {
+                                // Da terminare
+                                println!("Drone {} terminato", self.id);
+                                break;
+                            },
+                            DroneCommand::AddSender(node_id, sender) => {
+                                self.add_channel(node_id, sender);
+                            },
                         }
                     } else {
-                        println!("Drone {}: Canale dei comandi chiuso", self.id);
+                        println!("Drone {}: Canale comandi chiuso", self.id);
                         break;
                     }
                 }
             }
         }
+        println!("Drone {}: Uscito dal loop", self.id);
     }
 }
 
-impl MyDrone {}
+impl MyDrone {
+    fn set_pdr(&mut self, pdr: f32) -> Result<(), String> {
+        if pdr > 0.0 && pdr < 1.0 {
+            println!("Drone {}: modificato PDR, {} -> {}", self.id, self.pdr, pdr);
+            self.pdr = pdr;
+            return Ok(());
+        }
+
+        Err("Incorrect value of PDR".to_string())
+    }
+
+    fn add_channel(&mut self, node_id: NodeId, sender: Sender<Packet>) {
+        self.packet_send.insert(node_id, sender);
+    }
+}
