@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, NodeEvent};
 use wg_2024::drone::{Drone, DroneOptions};
 use wg_2024::network::NodeId;
-use wg_2024::packet::Packet;
+use wg_2024::packet::{Packet, PacketType};
 
 #[derive(Debug, Clone)]
 pub struct MyDrone {
@@ -45,7 +45,12 @@ impl Drone for MyDrone {
             select! {
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(packet) = packet_res {
-                        println!("Drone {}: Ricevuto un pacchetto {:?}", self.id, packet);
+                        match packet.pack_type {
+                            PacketType::Ack(_) | PacketType::Nack(_) => unimplemented!(),
+                            PacketType::MsgFragment(fragment) => unimplemented!(),
+                            PacketType::FloodRequest(floodRequest) => unimplemented!(),
+                            PacketType::FloodResponse(floodResponse) => unimplemented!(),
+                        }
                     } else {
                         println!("Drone {}: Canale dei pacchetti chiuso", self.id);
                         break;
@@ -55,9 +60,7 @@ impl Drone for MyDrone {
                     if let Ok(command) = command_res {
                         match command {
                             DroneCommand::SetPacketDropRate(pdr) => {
-                                if let Err(err) = self.set_pdr(pdr) {
-                                    println!("Errore nel drone {}: {}", self.id, err);
-                                }
+                                self.set_pdr(pdr).expect("Error in PDR setting");
                             },
                             DroneCommand::Crash => {
                                 // Da terminare
