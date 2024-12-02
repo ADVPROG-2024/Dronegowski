@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, NodeEvent};
 use wg_2024::drone::{Drone, DroneOptions};
 use wg_2024::network::NodeId;
-use wg_2024::packet::Packet;
+use wg_2024::packet::{Nack, NackType, Packet, PacketType};
 
 #[derive(Debug, Clone)]
 pub struct MyDrone {
@@ -35,7 +35,7 @@ impl Drone for MyDrone {
             sim_controller_recv: options.controller_recv,
             packet_recv: options.packet_recv,
             pdr: options.pdr,
-            packet_send: options.packet_send, // Corretto: usa il packet_send passato
+            packet_send: options.packet_send,
         }
     }
 
@@ -45,19 +45,32 @@ impl Drone for MyDrone {
             select! {
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(packet) = packet_res {
-                        println!("Drone {}: Ricevuto un pacchetto {:?}", self.id, packet);
-                    } else {
-                        println!("Drone {}: Canale dei pacchetti chiuso", self.id);
-                        break;
+                        match packet.pack_type {
+                            PacketType::Ack(_) | PacketType::Nack(_) => unimplemented!(),
+                            PacketType::MsgFragment(ref fragment) => {
+                                // da aggiungere il drop del pacchetto in base al DRP
+                                match self.forward_packet(packet.clone()) {
+                                    Ok(()) => {
+                                        // frammento inoltrato correttamente
+                                    },
+                                    Err(err) => {
+                                        // creare il pacchetto di errore da mandare indietro tramite gli hop
+                                        panic!("{:?}", err);
+                                        unimplemented!();
+                                    }
+                                }
+
+                            }
+                            PacketType::FloodRequest(floodRequest) => unimplemented!(),
+                            PacketType::FloodResponse(floodResponse) => unimplemented!(),
+                        }
                     }
                 },
                 recv(self.sim_controller_recv) -> command_res => {
                     if let Ok(command) = command_res {
                         match command {
                             DroneCommand::SetPacketDropRate(pdr) => {
-                                if let Err(err) = self.set_pdr(pdr) {
-                                    println!("Errore nel drone {}: {}", self.id, err);
-                                }
+                                self.set_pdr(pdr).expect("Error in PDR setting");
                             },
                             DroneCommand::Crash => {
                                 // Da terminare
@@ -68,9 +81,6 @@ impl Drone for MyDrone {
                                 self.add_channel(node_id, sender);
                             },
                         }
-                    } else {
-                        println!("Drone {}: Canale comandi chiuso", self.id);
-                        break;
                     }
                 }
             }
@@ -80,6 +90,45 @@ impl Drone for MyDrone {
 }
 
 impl MyDrone {
+    // Metodo per inviare pacchetti al prossimo nodo presente nell'hops
+    fn forward_packet(&self, mut packet: Packet) -> Result<(), Nack> {
+        packet.routing_header.hop_index += 1;
+
+        let next_hop = packet
+            .routing_header
+            .hops
+            .get(packet.routing_header.hop_index);
+
+        println!("Sender di Drone {} -> {:?}", self.id, self.packet_send);
+
+        let fragment_index = match packet.pack_type.clone() {
+            PacketType::MsgFragment(fragment) => fragment.fragment_index,
+            // 0 perchè solo i MsgFragment possono essere frammentati
+            _ => 0,
+        };
+
+        match next_hop {
+            Some(next_node) => {
+                match self.packet_send.get(next_node) {
+                    Some(next_node_channel) => {
+                        next_node_channel.send(packet);
+                        Ok(())
+                    }
+                    // None se il next node non è neighbour del drone
+                    None => Err(Nack {
+                        fragment_index,
+                        nack_type: NackType::ErrorInRouting(*next_node),
+                    }),
+                }
+            }
+            // Se next_hop ritorna None significa che il drone è la destinazione finale
+            None => Err(Nack {
+                fragment_index,
+                nack_type: NackType::DestinationIsDrone,
+            }),
+        }
+    }
+
     fn set_pdr(&mut self, pdr: f32) -> Result<(), String> {
         if pdr > 0.0 && pdr < 1.0 {
             println!("Drone {}: modificato PDR, {} -> {}", self.id, self.pdr, pdr);

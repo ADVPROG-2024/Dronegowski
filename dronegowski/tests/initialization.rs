@@ -1,14 +1,13 @@
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use dronegowski::MyDrone;
-use rand::Rng;
 use std::collections::HashMap;
 use std::fs;
 use std::thread;
 use wg_2024::config::Config;
-use wg_2024::controller::{DroneCommand, NodeEvent};
+use wg_2024::controller::DroneCommand;
 use wg_2024::drone::{Drone, DroneOptions};
-use wg_2024::network::NodeId;
-use wg_2024::packet::Packet;
+use wg_2024::network::{NodeId, SourceRoutingHeader};
+use wg_2024::packet::{Fragment, Packet, PacketType};
 
 /// Parsing del file di configurazione TOML.
 pub fn parse_config(file: &str) -> Config {
@@ -36,7 +35,8 @@ fn test_initialization() {
     }
     let mut handles = Vec::new();
 
-    for drone in config.drone.into_iter() {
+    // Runnano tutti i droni
+    for drone in config.drone.clone().into_iter() {
         let (controller_drone_send, controller_drone_recv) = unbounded();
         controller_drones.insert(drone.id, controller_drone_send.clone());
         let node_event_send = node_event_send.clone();
@@ -65,24 +65,62 @@ fn test_initialization() {
     // Simula un breve tempo di esecuzione
     std::thread::sleep(std::time::Duration::from_secs(2));
 
+    // Simulazione invio di un pacchetto tra droni (faila perchè DroneIsDestination)
+    // test_send_packet_between_nodes(&config, &packet_channels);
+
     // Invia aggiornamento del PDR a tutti i droni
-    for sender in controller_drones.values() {
-        sender
-            .send(DroneCommand::SetPacketDropRate(0.3))
-            .expect("Errore nella modifica del PDR!");
-    }
+    test_command_set_pdr(&controller_drones);
 
     // Invia il comando di terminazione a tutti i droni
-    for sender in controller_drones.values() {
-        sender
-            .send(DroneCommand::Crash)
-            .expect("Errore nell'invio del comando di terminazione");
-    }
+    test_crash_all(&controller_drones);
 
     // Aspetta che tutti i thread dei droni terminino
     while let Some(handle) = handles.pop() {
         handle
             .join()
             .expect("Errore durante la terminazione di un drone");
+    }
+}
+
+fn test_send_packet_between_nodes(
+    config: &Config,
+    packet_channels: &HashMap<NodeId, (Sender<Packet>, Receiver<Packet>)>,
+) {
+    let packet = Packet {
+        pack_type: (PacketType::MsgFragment(Fragment {
+            fragment_index: 0,
+            total_n_fragments: 1,
+            length: 12,
+            data: [3; 80],
+        })),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![config.drone[0].id, config.drone[1].id, config.drone[2].id],
+        },
+        session_id: 0,
+    };
+
+    if let Some(sender) = packet_channels.get(&config.drone[1].id).map(|(tx, _)| tx) {
+        sender
+            .send(packet)
+            .expect("Errore nell'invio del pacchetto!");
+    } else {
+        panic!("Canale non trovato per il drone 2!");
+    }
+}
+
+fn test_command_set_pdr(controller_drones: &HashMap<NodeId, Sender<DroneCommand>>) {
+    for sender in controller_drones.values() {
+        sender
+            .send(DroneCommand::SetPacketDropRate(0.3))
+            .expect("Errore nella modifica del PDR!");
+    }
+}
+
+fn test_crash_all(controller_drones: &HashMap<NodeId, Sender<DroneCommand>>) {
+    for sender in controller_drones.values() {
+        sender
+            .send(DroneCommand::Crash)
+            .expect("Errore nell'invio del comando di terminazione");
     }
 }
