@@ -1,12 +1,11 @@
 use crate::MyDrone;
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::thread;
 use thiserror::Error;
 use wg_2024::config::Config;
-use wg_2024::controller::{DroneCommand, NodeEvent};
+use wg_2024::controller::DroneCommand;
 use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;

@@ -54,7 +54,6 @@ impl Drone for MyDrone {
                             PacketType::Ack(_) | PacketType::Nack(_) => unimplemented!(), // bisogna inoltare il pacchetto
                             PacketType::MsgFragment(ref fragment) => {
                                 if self.drop_packet() {
-                                    // pacchetto droppato quindi...
                                     match self.forward_packet(self.packet_nack(packet.clone(), Nack {fragment_index: fragment.fragment_index, nack_type: NackType::Dropped})) {
                                         Ok(()) => {
                                             // Nack packet inviato correttamente al prossimo nodo
