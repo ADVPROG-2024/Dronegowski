@@ -47,7 +47,20 @@ impl Drone for MyDrone {
                     if let Ok(packet) = packet_res {
                         match packet.pack_type {
                             PacketType::Ack(_) | PacketType::Nack(_) => unimplemented!(),
-                            PacketType::MsgFragment(fragment) => unimplemented!(),
+                            PacketType::MsgFragment(ref fragment) => {
+                                // da aggiungere il drop del pacchetto in base al DRP
+                                match self.forward_packet(packet.clone()) {
+                                    Ok(()) => {
+                                        // frammento inoltrato correttamente
+                                    },
+                                    Err(err) => {
+                                        // creare il pacchetto di errore da mandare indietro tramite gli hop
+                                        panic!("{:?}", err);
+                                        unimplemented!();
+                                    }
+                                }
+
+                            }
                             PacketType::FloodRequest(floodRequest) => unimplemented!(),
                             PacketType::FloodResponse(floodResponse) => unimplemented!(),
                         }
@@ -77,6 +90,7 @@ impl Drone for MyDrone {
 }
 
 impl MyDrone {
+    // Metodo per inviare pacchetti al prossimo nodo presente nell'hops
     fn forward_packet(&self, mut packet: Packet) -> Result<(), Nack> {
         packet.routing_header.hop_index += 1;
 
@@ -85,6 +99,8 @@ impl MyDrone {
             .hops
             .get(packet.routing_header.hop_index);
 
+        println!("Sender di Drone {} -> {:?}", self.id, self.packet_send);
+
         let fragment_index = match packet.pack_type.clone() {
             PacketType::MsgFragment(fragment) => fragment.fragment_index,
             // 0 perchè solo i MsgFragment possono essere frammentati
@@ -92,17 +108,19 @@ impl MyDrone {
         };
 
         match next_hop {
-            Some(next_node) => match self.packet_send.get(next_node) {
-                Some(next_node_channel) => {
-                    next_node_channel.send(packet);
-                    Ok(())
+            Some(next_node) => {
+                match self.packet_send.get(next_node) {
+                    Some(next_node_channel) => {
+                        next_node_channel.send(packet);
+                        Ok(())
+                    }
+                    // None se il next node non è neighbour del drone
+                    None => Err(Nack {
+                        fragment_index,
+                        nack_type: NackType::ErrorInRouting(*next_node),
+                    }),
                 }
-                // None se il next node non è neighbour del drone
-                None => Err(Nack {
-                    fragment_index,
-                    nack_type: NackType::ErrorInRouting(*next_node),
-                }),
-            },
+            }
             // Se next_hop ritorna None significa che il drone è la destinazione finale
             None => Err(Nack {
                 fragment_index,

@@ -1,14 +1,13 @@
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use dronegowski::MyDrone;
-use rand::Rng;
 use std::collections::HashMap;
 use std::fs;
 use std::thread;
 use wg_2024::config::Config;
-use wg_2024::controller::{DroneCommand, NodeEvent};
+use wg_2024::controller::DroneCommand;
 use wg_2024::drone::{Drone, DroneOptions};
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Ack, Packet, PacketType};
+use wg_2024::packet::{Fragment, Packet, PacketType};
 
 /// Parsing del file di configurazione TOML.
 pub fn parse_config(file: &str) -> Config {
@@ -36,6 +35,7 @@ fn test_initialization() {
     }
     let mut handles = Vec::new();
 
+    // Runnano tutti i droni
     for drone in config.drone.clone().into_iter() {
         let (controller_drone_send, controller_drone_recv) = unbounded();
         controller_drones.insert(drone.id, controller_drone_send.clone());
@@ -65,11 +65,11 @@ fn test_initialization() {
     // Simula un breve tempo di esecuzione
     std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // Simulazione invio di un pacchetto dal drone 1 al drone 2
-    test_invio_pacchetto(&config, &packet_channels);
+    // Simulazione invio di un pacchetto tra droni (faila perchè DroneIsDestination)
+    // test_send_packet_between_nodes(&config, &packet_channels);
 
     // Invia aggiornamento del PDR a tutti i droni
-    test_comando_setpdr(&controller_drones);
+    test_command_set_pdr(&controller_drones);
 
     // Invia il comando di terminazione a tutti i droni
     test_crash_all(&controller_drones);
@@ -82,15 +82,20 @@ fn test_initialization() {
     }
 }
 
-fn test_invio_pacchetto(
+fn test_send_packet_between_nodes(
     config: &Config,
     packet_channels: &HashMap<NodeId, (Sender<Packet>, Receiver<Packet>)>,
 ) {
     let packet = Packet {
-        pack_type: (PacketType::Ack(Ack { fragment_index: 0 })),
+        pack_type: (PacketType::MsgFragment(Fragment {
+            fragment_index: 0,
+            total_n_fragments: 1,
+            length: 12,
+            data: [3; 80],
+        })),
         routing_header: SourceRoutingHeader {
-            hop_index: 0,
-            hops: vec![config.drone[0].id, config.drone[1].id],
+            hop_index: 1,
+            hops: vec![config.drone[0].id, config.drone[1].id, config.drone[2].id],
         },
         session_id: 0,
     };
@@ -104,7 +109,7 @@ fn test_invio_pacchetto(
     }
 }
 
-fn test_comando_setpdr(controller_drones: &HashMap<NodeId, Sender<DroneCommand>>) {
+fn test_command_set_pdr(controller_drones: &HashMap<NodeId, Sender<DroneCommand>>) {
     for sender in controller_drones.values() {
         sender
             .send(DroneCommand::SetPacketDropRate(0.3))
