@@ -135,8 +135,9 @@ impl Drone for MyDrone {
                             DroneCommand::AddSender(node_id, sender) => {
                                 self.add_sender(node_id, sender).expect("Sender already present!");
                             },
-                            _ => {
-
+                            DroneCommand::RemoveSender(node_id) => {
+                                // Metodo per rimuovere sendere dal self.sender
+                                self.remove_sender(node_id).expect("Sender is not in self.sender");
                             }
                         }
                     }
@@ -238,6 +239,18 @@ impl MyDrone {
                 hops: rev_path,
             },
             session_id: packet.session_id,
+        }
+    }
+
+    fn remove_sender(&mut self, node_id: NodeId) -> Result<(), String> {
+        if self.packet_send.contains_key(&node_id) {
+            Err(format!(
+                "Sender per il nodo {} è già presente nella mappa!",
+                node_id
+            ))
+        } else {
+            self.packet_send.remove(&node_id);
+            Ok(())
         }
     }
 }
