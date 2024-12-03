@@ -15,7 +15,7 @@ pub struct MyDrone {
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Mappa dei canali per inviare pacchetti ai neighbours nodes
     pub pdr: f32,                                     // PDR
 }
-//ciao
+
 impl Drone for MyDrone {
     fn new(
         id: NodeId,
