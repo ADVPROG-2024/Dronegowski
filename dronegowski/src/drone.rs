@@ -1,7 +1,7 @@
 use crossbeam_channel::{select, Receiver, Sender};
 use rand::Rng;
 use std::collections::HashMap;
-use wg_2024::controller::{DroneCommand, NodeEvent};
+use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Nack, NackType, Packet, PacketType};
@@ -9,7 +9,7 @@ use wg_2024::packet::{Nack, NackType, Packet, PacketType};
 #[derive(Debug, Clone)]
 pub struct MyDrone {
     pub id: NodeId,
-    pub sim_controller_send: Sender<NodeEvent>, // Canale per inviare eventi dal SC
+    pub sim_controller_send: Sender<DroneEvent>, // Canale per inviare eventi dal SC
     pub sim_controller_recv: Receiver<DroneCommand>, // Canale per ricevere comandi dal SC
     pub packet_recv: Receiver<Packet>,          // Canale per ricevere pacchetti
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Mappa dei canali per inviare pacchetti ai neighbours nodes
@@ -19,7 +19,7 @@ pub struct MyDrone {
 impl Drone for MyDrone {
     fn new(
         id: NodeId,
-        controller_send: Sender<NodeEvent>,
+        controller_send: Sender<DroneEvent>,
         controller_recv: Receiver<DroneCommand>,
         packet_recv: Receiver<Packet>,
         packet_send: HashMap<NodeId, Sender<Packet>>,
