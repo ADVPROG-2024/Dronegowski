@@ -5,8 +5,10 @@ use dronegowski::MyDrone;
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
-use wg_2024::network::SourceRoutingHeader;
-use wg_2024::packet::{Ack, Packet, PacketType};
+use wg_2024::network::{NodeId, SourceRoutingHeader};
+use wg_2024::packet::{Ack, NackType, Packet, PacketType};
+use crossbeam_channel::{select, unbounded, Receiver, Sender};
+
 
 #[test]
 #[should_panic(expected = "pdr out of bounds")]
@@ -165,4 +167,62 @@ fn drone_listen_on_closed_channels() {
 
     // Verifica che il thread non sia in deadlock
     assert!(handle.join().is_ok());
+}
+
+#[test]
+fn ack_failure() {
+        // Step 1: Configura i droni
+        let (def_drone_opts_sender, _recv_event_sender, _send_command_sender, sender_to_receiver) = default_drone();
+        let (def_drone_opts_receiver, _recv_event_receiver, _send_command_receiver, receiver_channel) = default_drone();
+
+        // Drone mittente
+        let mut sender_drone = MyDrone::new(
+            1, // ID del drone mittente
+            def_drone_opts_sender.sim_controller_send,
+            def_drone_opts_sender.sim_controller_recv,
+            def_drone_opts_sender.packet_recv,
+            HashMap::new(), // Mappa vuota, aggiungiamo dopo
+            0.1,            // PDR valido
+        );
+
+        // Drone ricevente
+        let mut receiver_drone = MyDrone::new(
+            2, // ID del drone ricevente
+            def_drone_opts_receiver.sim_controller_send,
+            def_drone_opts_receiver.sim_controller_recv,
+            def_drone_opts_receiver.packet_recv.clone(),
+            HashMap::new(),
+            0.1,
+        );
+
+        // Collegare i droni come neighbor
+        sender_drone
+            .add_sender(2, sender_to_receiver.clone())
+            .expect("Impossibile aggiungere il sender");
+
+        receiver_drone
+            .add_sender(1, receiver_channel.clone())
+            .expect("Impossibile aggiungere il sender");
+
+        // Creare un pacchetto di tipo Ack
+        let ack_packet = Packet {
+            pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
+            routing_header: SourceRoutingHeader {
+                hop_index: 0,
+                hops: vec![1, 2], // Il percorso include i droni
+            },
+            session_id: 42,
+        };
+
+        // Inviare il pacchetto
+        assert!(sender_drone.forward_packet(ack_packet.clone()).is_ok());
+
+        // Verificare il risultato
+        if let Ok(received_packet) = def_drone_opts_receiver.packet_recv.recv() {
+            //assert_eq!(received_packet.pack_type, PacketType::Ack(Ack { fragment_index: 0 }));
+            assert_eq!(received_packet.routing_header.hops, vec![1, 2]);
+            assert_eq!(received_packet.session_id, 42);
+        } else {
+            panic!("Il drone ricevente non ha ricevuto il pacchetto!");
+        }
 }

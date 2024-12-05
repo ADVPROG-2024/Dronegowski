@@ -66,10 +66,12 @@ impl Drone for MyDrone {
                                         match self.forward_packet(packet.clone()) {
                                             Ok(()) => {
                                                 // Ack || Nack inoltrato correttamente
+                                                println!("Drone {} forwarded packet", self.id);
                                             },
                                             Err(_) => {
                                                 // Nack: ErrorInRouting || DestinationIsDrone
                                                 // Segnalato al SC che un pachetto ACK/NACK è stato droppato
+                                                println!("Drone {} send ack | nack", self.id);
                                                 self.sim_controller_send.send(DroneEvent::PacketDropped(packet.clone()));
                                             }
                                         }
@@ -211,7 +213,7 @@ impl MyDrone {
         Err("Incorrect value of PDR".to_string())
     }
 
-    fn add_sender(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
+    pub fn add_sender(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
         if self.packet_send.contains_key(&node_id) {
             Err(format!(
                 "Sender per il nodo {} è già presente nella mappa!",
