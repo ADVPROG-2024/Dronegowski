@@ -4,16 +4,24 @@ use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Nack, NackType, Packet, PacketType};
+use wg_2024::packet::{Nack, NackType, NodeType, Packet, PacketType};
+
+#[derive(Clone, Debug)]
+enum DroneState {
+    Active,
+    Crashing,
+    Crashed,
+}
 
 #[derive(Debug, Clone)]
 pub struct MyDrone {
     pub id: NodeId,
     pub sim_controller_send: Sender<DroneEvent>, // Canale per inviare eventi dal SC
     pub sim_controller_recv: Receiver<DroneCommand>, // Canale per ricevere comandi dal SC
-    pub packet_recv: Receiver<Packet>,          // Canale per ricevere pacchetti
+    pub packet_recv: Receiver<Packet>,           // Canale per ricevere pacchetti
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Mappa dei canali per inviare pacchetti ai neighbours nodes
     pub pdr: f32,                                     // PDR
+    pub state: DroneState,                            // Stato del drone
 }
 
 impl Drone for MyDrone {
@@ -41,6 +49,7 @@ impl Drone for MyDrone {
             packet_recv,
             packet_send,
             pdr,
+            state: DroneState::Active,
         }
     }
 
@@ -58,19 +67,14 @@ impl Drone for MyDrone {
                                             Ok(()) => {
                                                 // Ack || Nack inoltrato correttamente
                                             },
-                                            Err(nack) => {
+                                            Err(_) => {
                                                 // Nack: ErrorInRouting || DestinationIsDrone
-                                                match self.forward_packet(self.packet_nack(packet.clone(), nack)) {
-                                                    Ok(()) => {
-                                                        // Nack packet inviato correttamente al prossimo nodo
-                                                    },
-                                                    Err(err) => {
-                                                        panic!("{err:?}");
-                                                    },
-                                                }
+                                                // Segnalato al SC che un pachetto ACK/NACK è stato droppato
+                                                self.sim_controller_send.send(DroneEvent::PacketDropped(packet.clone()));
                                             }
                                         }
-                                    }, // bisogna inoltare il pacchetto
+                                    },
+                                    // bisogna inoltare il pacchetto
                                     PacketType::MsgFragment(ref fragment) => {
                                         // Verifica se il pacchetto deve essere droppato per il DPR
                                         if self.drop_packet() {
@@ -104,7 +108,15 @@ impl Drone for MyDrone {
                                             }
                                         }
                                     }
-                                    PacketType::FloodRequest(floodRequest) => unimplemented!(),
+                                    PacketType::FloodRequest(mut floodRequest) => {
+                                        if floodRequest.path_trace.contains(&(self.id, NodeType::Drone)){
+                                            floodRequest.path_trace.push((self.id, NodeType::Drone));
+                                        }
+                                        else{
+                                            floodRequest.path_trace.push((self.id, NodeType::Drone));
+
+                                        }
+                                    },
                                     PacketType::FloodResponse(floodResponse) => unimplemented!(),
                                 }
                             } else {
@@ -128,15 +140,17 @@ impl Drone for MyDrone {
                                 self.set_pdr(pdr).expect("Error in PDR setting");
                             },
                             DroneCommand::Crash => {
-                                // Da terminare
+                                // Il SC ha mandato Crash al drone
+                                // e RemoveSender ai droni neighbours
+                                self.set_drone_state(DroneState::Crashing);
                                 println!("Drone {} terminato", self.id);
                                 break;
                             },
                             DroneCommand::AddSender(node_id, sender) => {
                                 self.add_sender(node_id, sender).expect("Sender already present!");
                             },
-                            _ => {
-
+                            DroneCommand::RemoveSender(node_id) => {
+                                self.remove_sender(node_id).expect("Sender is not in self.sender");
                             }
                         }
                     }
@@ -209,6 +223,10 @@ impl MyDrone {
         }
     }
 
+    fn set_drone_state(&mut self, state: DroneState) {
+        self.state = state;
+    }
+
     fn drop_packet(&self) -> bool {
         let mut rng = rand::rng();
         let n: f32 = rng.random_range(0.0..=1.0);
@@ -238,6 +256,18 @@ impl MyDrone {
                 hops: rev_path,
             },
             session_id: packet.session_id,
+        }
+    }
+
+    fn remove_sender(&mut self, node_id: NodeId) -> Result<(), String> {
+        if self.packet_send.contains_key(&node_id) {
+            Err(format!(
+                "Sender per il nodo {} è già presente nella mappa!",
+                node_id
+            ))
+        } else {
+            self.packet_send.remove(&node_id);
+            Ok(())
         }
     }
 }
