@@ -98,7 +98,7 @@ impl Drone for MyDrone {
                                                 }
                                             }
                                         }
-                                    PacketType::FloodRequest(mut floodRequest) => {
+                                        PacketType::FloodRequest(mut floodRequest) => {
                                         if self.flood_id_vec.insert(floodRequest.flood_id){
                                             //Il flood_id non era presente, il che significa che la floodRequest passa per la prima volta in questo drone
                                             let Some((previous_id, _)) = floodRequest.path_trace.get(floodRequest.path_trace.len()-1);
