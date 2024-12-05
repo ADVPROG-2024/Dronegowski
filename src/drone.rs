@@ -78,7 +78,7 @@ impl Drone for MyDrone {
                                     },
                                     // bisogna inoltare il pacchetto
                                     PacketType::MsgFragment(ref fragment) => {
-                                        // Verifica se il pacchetto deve essere droppato per il DPR
+                                        // Verifica se il pacchetto deve essere droppato per il PDR
                                         if self.drop_packet() {
                                             // Nack: Dropped
                                             match self.forward_packet(self.packet_nack(packet.clone(), Nack {fragment_index: fragment.fragment_index, nack_type: NackType::Dropped})) {
@@ -161,7 +161,19 @@ impl Drone for MyDrone {
                                             }
                                         }
                                     },
-                                    PacketType::FloodResponse(floodResponse) => unimplemented!(),
+                                    PacketType::FloodResponse(_) => {
+                                        //Ricevuta una FloodResponse, mandiamola indietro al nodo precedente
+                                        match self.forward_packet(packet.clone()) {
+                                            Ok(()) => {
+                                                // FloodResponse inoltrata correttamente
+                                            },
+                                            Err(_) => {
+                                                // Nack: ErrorInRouting || DestinationIsDrone
+                                                // Segnalato al SC che un pacchetto ACK/NACK è stato droppato
+                                                self.sim_controller_send.send(DroneEvent::PacketDropped(packet.clone()));
+                                            }
+                                        }
+                                    },
                                 }
                             } else {
                                 // Nack: UnexpectedRecipient
