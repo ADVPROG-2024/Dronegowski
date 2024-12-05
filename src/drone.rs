@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Nack, NackType, Packet, PacketType};
+use wg_2024::packet::{Nack, NackType, NodeType, Packet, PacketType};
 
 #[derive(Debug, Clone)]
 pub struct MyDrone {
@@ -99,7 +99,15 @@ impl Drone for MyDrone {
                                             }
                                         }
                                     }
-                                    PacketType::FloodRequest(floodRequest) => unimplemented!(),
+                                    PacketType::FloodRequest(mut floodRequest) => {
+                                        if floodRequest.path_trace.contains(&(self.id, NodeType::Drone)){
+                                            floodRequest.path_trace.push((self.id, NodeType::Drone));
+                                        }
+                                        else{
+                                            floodRequest.path_trace.push((self.id, NodeType::Drone));
+
+                                        }
+                                    },
                                     PacketType::FloodResponse(floodResponse) => unimplemented!(),
                                 }
                             } else {
