@@ -11,7 +11,7 @@ pub struct MyDrone {
     pub id: NodeId,
     pub sim_controller_send: Sender<DroneEvent>, // Canale per inviare eventi dal SC
     pub sim_controller_recv: Receiver<DroneCommand>, // Canale per ricevere comandi dal SC
-    pub packet_recv: Receiver<Packet>,          // Canale per ricevere pacchetti
+    pub packet_recv: Receiver<Packet>,           // Canale per ricevere pacchetti
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Mappa dei canali per inviare pacchetti ai neighbours nodes
     pub pdr: f32,                                     // PDR
 }
@@ -60,17 +60,12 @@ impl Drone for MyDrone {
                                             },
                                             Err(nack) => {
                                                 // Nack: ErrorInRouting || DestinationIsDrone
-                                                match self.forward_packet(self.packet_nack(packet.clone(), nack)) {
-                                                    Ok(()) => {
-                                                        // Nack packet inviato correttamente al prossimo nodo
-                                                    },
-                                                    Err(err) => {
-                                                        panic!("{err:?}");
-                                                    },
-                                                }
+                                                // 
+                                                // Bisogna comunicare al SC di inviare correttamente ack/nack a destinazione
                                             }
                                         }
-                                    }, // bisogna inoltare il pacchetto
+                                    },
+                                    // bisogna inoltare il pacchetto
                                     PacketType::MsgFragment(ref fragment) => {
                                         // Verifica se il pacchetto deve essere droppato per il DPR
                                         if self.drop_packet() {
@@ -135,8 +130,9 @@ impl Drone for MyDrone {
                             DroneCommand::AddSender(node_id, sender) => {
                                 self.add_sender(node_id, sender).expect("Sender already present!");
                             },
-                            _ => {
-
+                            DroneCommand::RemoveSender(node_id) => {
+                                // Metodo per rimuovere sendere dal self.sender
+                                self.remove_sender(node_id).expect("Sender is not in self.sender");
                             }
                         }
                     }
@@ -238,6 +234,18 @@ impl MyDrone {
                 hops: rev_path,
             },
             session_id: packet.session_id,
+        }
+    }
+
+    fn remove_sender(&mut self, node_id: NodeId) -> Result<(), String> {
+        if self.packet_send.contains_key(&node_id) {
+            Err(format!(
+                "Sender per il nodo {} è già presente nella mappa!",
+                node_id
+            ))
+        } else {
+            self.packet_send.remove(&node_id);
+            Ok(())
         }
     }
 }
