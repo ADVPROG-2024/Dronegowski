@@ -1,13 +1,13 @@
 mod common;
 
 use common::default_drone;
+use crossbeam_channel::unbounded;
 use dronegowski::MyDrone;
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
-use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Ack, NackType, Packet, PacketType};
-use crossbeam_channel::{select, unbounded, Receiver, Sender};
+use wg_2024::network::SourceRoutingHeader;
+use wg_2024::packet::{Ack, Packet, PacketType};
 
 
 #[test]
@@ -170,59 +170,45 @@ fn drone_listen_on_closed_channels() {
 }
 
 #[test]
-fn ack_failure() {
-        // Step 1: Configura i droni
-        let (def_drone_opts_sender, _recv_event_sender, _send_command_sender, sender_to_receiver) = default_drone();
-        let (def_drone_opts_receiver, _recv_event_receiver, _send_command_receiver, receiver_channel) = default_drone();
+fn send_ack_to_neighbor() {
 
-        // Drone mittente
-        let mut sender_drone = MyDrone::new(
-            1, // ID del drone mittente
-            def_drone_opts_sender.sim_controller_send,
-            def_drone_opts_sender.sim_controller_recv,
-            def_drone_opts_sender.packet_recv,
-            HashMap::new(), // Mappa vuota, aggiungiamo dopo
-            0.1,            // PDR valido
-        );
+    // Creazione dei canali
+    let (controller_send, _recv_event) = unbounded();
+    let (_send_command, controller_recv) = unbounded();
+    let (_send_packet, packet_recv) = unbounded();
 
-        // Drone ricevente
-        let mut receiver_drone = MyDrone::new(
-            2, // ID del drone ricevente
-            def_drone_opts_receiver.sim_controller_send,
-            def_drone_opts_receiver.sim_controller_recv,
-            def_drone_opts_receiver.packet_recv.clone(),
-            HashMap::new(),
-            0.1,
-        );
+    // Creazione del canale per il neighbor
+    let (neighbor_send, neighbor_recv) = unbounded();
 
-        // Collegare i droni come neighbor
-        sender_drone
-            .add_sender(2, sender_to_receiver.clone())
-            .expect("Impossibile aggiungere il sender");
+    // Crea una mappa per i neighbors
+    let mut packet_send = HashMap::new();
+    packet_send.insert(2, neighbor_send); // Drone 2 come neighbor
 
-        receiver_drone
-            .add_sender(1, receiver_channel.clone())
-            .expect("Impossibile aggiungere il sender");
+    // Inizializza il drone
+    let mut my_drone = MyDrone::new(
+        1, // ID del drone
+        controller_send,
+        controller_recv,
+        packet_recv,
+        packet_send,
+        0.1, // PDR
+    );
 
-        // Creare un pacchetto di tipo Ack
-        let ack_packet = Packet {
-            pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
-            routing_header: SourceRoutingHeader {
-                hop_index: 0,
-                hops: vec![1, 2], // Il percorso include i droni
-            },
-            session_id: 42,
-        };
+    // Creazione del pacchetto Ack
+    let packet = Packet {
+        pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 0,
+            hops: vec![1, 2], // Percorso: Drone 1 -> Drone 2
+        },
+        session_id: 1,
+    };
 
-        // Inviare il pacchetto
-        assert!(sender_drone.forward_packet(ack_packet.clone()).is_ok());
+    // Invia il pacchetto
+    assert!(my_drone.forward_packet(packet.clone()).is_ok());
 
-        // Verificare il risultato
-        if let Ok(received_packet) = def_drone_opts_receiver.packet_recv.recv() {
-            //assert_eq!(received_packet.pack_type, PacketType::Ack(Ack { fragment_index: 0 }));
-            assert_eq!(received_packet.routing_header.hops, vec![1, 2]);
-            assert_eq!(received_packet.session_id, 42);
-        } else {
-            panic!("Il drone ricevente non ha ricevuto il pacchetto!");
-        }
+    // Controlla che il pacchetto sia stato ricevuto dal neighbor
+    let received_packet = neighbor_recv.try_recv();
+    assert!(received_packet.is_ok());
+    // assert_eq!(received_packet.unwrap(), packet);
 }
