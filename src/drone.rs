@@ -6,6 +6,13 @@ use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Nack, NackType, Packet, PacketType};
 
+#[derive(Clone, Debug)]
+enum DroneState {
+    Active,
+    Crashing,
+    Crashed,
+}
+
 #[derive(Debug, Clone)]
 pub struct MyDrone {
     pub id: NodeId,
@@ -14,6 +21,7 @@ pub struct MyDrone {
     pub packet_recv: Receiver<Packet>,           // Canale per ricevere pacchetti
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Mappa dei canali per inviare pacchetti ai neighbours nodes
     pub pdr: f32,                                     // PDR
+    pub state: DroneState,                            // Stato del drone
 }
 
 impl Drone for MyDrone {
@@ -41,6 +49,7 @@ impl Drone for MyDrone {
             packet_recv,
             packet_send,
             pdr,
+            state: DroneState::Active,
         }
     }
 
@@ -58,10 +67,10 @@ impl Drone for MyDrone {
                                             Ok(()) => {
                                                 // Ack || Nack inoltrato correttamente
                                             },
-                                            Err(nack) => {
+                                            Err(_) => {
                                                 // Nack: ErrorInRouting || DestinationIsDrone
-                                                // 
-                                                // Bisogna comunicare al SC di inviare correttamente ack/nack a destinazione
+                                                // Segnalato al SC che un pachetto ACK/NACK è stato droppato
+                                                self.sim_controller_send.send(DroneEvent::PacketDropped(packet.clone()));
                                             }
                                         }
                                     },
@@ -123,7 +132,9 @@ impl Drone for MyDrone {
                                 self.set_pdr(pdr).expect("Error in PDR setting");
                             },
                             DroneCommand::Crash => {
-                                // Da terminare
+                                // Il SC ha mandato Crash al drone
+                                // e RemoveSender ai droni neighbours
+                                self.set_drone_state(DroneState::Crashing);
                                 println!("Drone {} terminato", self.id);
                                 break;
                             },
@@ -131,7 +142,6 @@ impl Drone for MyDrone {
                                 self.add_sender(node_id, sender).expect("Sender already present!");
                             },
                             DroneCommand::RemoveSender(node_id) => {
-                                // Metodo per rimuovere sendere dal self.sender
                                 self.remove_sender(node_id).expect("Sender is not in self.sender");
                             }
                         }
@@ -203,6 +213,10 @@ impl MyDrone {
             self.packet_send.insert(node_id, sender);
             Ok(())
         }
+    }
+
+    fn set_drone_state(&mut self, state: DroneState) {
+        self.state = state;
     }
 
     fn drop_packet(&self) -> bool {
