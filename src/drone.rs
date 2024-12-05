@@ -124,9 +124,7 @@ impl Drone for MyDrone {
                                                             // FloodRequest inoltrata correttamente
                                                         },
                                                         Err(_) => {
-                                                            // Nack: ErrorInRouting || DestinationIsDrone
-                                                            // Segnalato al SC che un pacchetto ACK/NACK è stato droppato
-                                                            self.sim_controller_send.send(DroneEvent::PacketDropped(packet.clone()));
+
                                                         }
                                                     }
                                                 }
