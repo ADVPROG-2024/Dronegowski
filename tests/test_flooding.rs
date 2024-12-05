@@ -9,7 +9,6 @@ use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, FloodRequest, NodeType, Packet, PacketType};
 
 fn test_flood_request_handling() {
-
     let (def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();
 
     let (sender, receiver) = crossbeam_channel::unbounded::<Packet>();
@@ -22,7 +21,7 @@ fn test_flood_request_handling() {
         def_drone_opts.sim_controller_recv,
         def_drone_opts.packet_recv,
         senders,
-        0.1, // PDR valido
+        0.0, // PDR valido
     );
 
     // Avvia il drone in un thread separato
