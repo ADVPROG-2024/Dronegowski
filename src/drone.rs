@@ -74,7 +74,7 @@ impl Drone for MyDrone {
                                         PacketType::Ack(_) | PacketType::Nack(_) => {
                                             if let Err(_) = self.forward_packet(packet.clone()) {
                                                 self.sim_controller_send.send(DroneEvent::PacketDropped(packet.clone())).unwrap();
-                                            }                                     
+                                            }
                                         },
                                         PacketType::MsgFragment(ref fragment) => {
                                             // Se il Drone è in Crashing Behaviour allora non gestisce il MsgFragment
@@ -98,7 +98,7 @@ impl Drone for MyDrone {
                                                 }
                                             }
                                         }
-                                        PacketType::FloodRequest(mut floodRequest) => {
+                                    PacketType::FloodRequest(mut floodRequest) => {
                                         if self.flood_id_vec.insert(floodRequest.flood_id){
                                             //Il flood_id non era presente, il che significa che la floodRequest passa per la prima volta in questo drone
                                             let Some((previous_id, _)) = floodRequest.path_trace.get(floodRequest.path_trace.len()-1);
