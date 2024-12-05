@@ -5,7 +5,7 @@ use std::fs;
 use std::thread;
 use wg_2024::config::Config;
 use wg_2024::controller::DroneCommand;
-use wg_2024::drone::{Drone, DroneOptions};
+use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Packet, PacketType};
 
@@ -49,14 +49,14 @@ fn test_initialization() {
             .collect();
 
         handles.push(thread::spawn(move || {
-            let mut drone = MyDrone::new(DroneOptions {
-                id: drone.id,
-                controller_recv: controller_drone_recv,
-                controller_send: node_event_send,
+            let mut drone = MyDrone::new(
+                drone.id,
+                node_event_send,
+                controller_drone_recv,
                 packet_recv,
                 packet_send,
-                pdr: drone.pdr,
-            });
+                drone.pdr,
+            );
 
             drone.run();
         }));
@@ -91,7 +91,7 @@ fn test_send_packet_between_nodes(
             fragment_index: 0,
             total_n_fragments: 1,
             length: 12,
-            data: [3; 80],
+            data: [3; 128],
         })),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
@@ -118,9 +118,14 @@ fn test_command_set_pdr(controller_drones: &HashMap<NodeId, Sender<DroneCommand>
 }
 
 fn test_crash_all(controller_drones: &HashMap<NodeId, Sender<DroneCommand>>) {
-    for sender in controller_drones.values() {
-        sender
-            .send(DroneCommand::Crash)
-            .expect("Errore nell'invio del comando di terminazione");
+    for (node, sender) in controller_drones {
+        crash_node(controller_drones, node)
     }
+}
+
+fn crash_node(controller_drones: &HashMap<NodeId, Sender<DroneCommand>>, node_id: &NodeId) {
+    let drone_crash = controller_drones.get(&node_id).unwrap();
+    drone_crash
+        .send(DroneCommand::Crash)
+        .expect("Errore nell'invio del comando di terminazione");
 }
