@@ -60,7 +60,7 @@ impl Drone for MyDrone {
                                             },
                                             Err(nack) => {
                                                 // Nack: ErrorInRouting || DestinationIsDrone
-
+                                                // 
                                                 // Bisogna comunicare al SC di inviare correttamente ack/nack a destinazione
                                             }
                                         }
