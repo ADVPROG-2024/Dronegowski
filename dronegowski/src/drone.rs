@@ -60,17 +60,12 @@ impl Drone for MyDrone {
                                             },
                                             Err(nack) => {
                                                 // Nack: ErrorInRouting || DestinationIsDrone
-                                                match self.forward_packet(self.packet_nack(packet.clone(), nack)) {
-                                                    Ok(()) => {
-                                                        // Nack packet inviato correttamente al prossimo nodo
-                                                    },
-                                                    Err(err) => {
-                                                        panic!("{err:?}");
-                                                    },
-                                                }
+
+                                                // Bisogna comunicare al SC di inviare correttamente ack/nack a destinazione
                                             }
                                         }
-                                    }, // bisogna inoltare il pacchetto
+                                    },
+                                    // bisogna inoltare il pacchetto
                                     PacketType::MsgFragment(ref fragment) => {
                                         // Verifica se il pacchetto deve essere droppato per il DPR
                                         if self.drop_packet() {
