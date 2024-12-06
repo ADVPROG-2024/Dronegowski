@@ -57,14 +57,14 @@ fn test_initialization() {
             .collect();
 
         handles.push(thread::spawn(move || {
-            let mut drone = MyDrone {
-                id: drone.id,
-                sim_controller_recv: controller_drone_recv,
-                sim_controller_send: node_event_send,
+            let mut drone = MyDrone::new(
+                drone.id,
+                node_event_send,
+                controller_drone_recv,
                 packet_recv,
                 packet_send,
-                pdr: drone.pdr,
-            };
+                drone.pdr,
+            );
 
             drone.run();
         }));

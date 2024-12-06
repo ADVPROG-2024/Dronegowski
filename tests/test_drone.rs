@@ -64,7 +64,7 @@ fn forward_packet_success() {
 
     let (sender, receiver) = crossbeam_channel::unbounded::<Packet>();
     let mut senders = HashMap::new();
-    senders.insert(2, sender); // Drone 2 è il neighbor
+    senders.insert(2, sender); // Drone 2 è il neighbour
 
     let mut my_drone = MyDrone::new(
         1, // ID del drone
@@ -259,3 +259,4 @@ fn send_nack_to_neighbor() {
     assert!(received_packet.is_ok());
     // assert_eq!(received_packet.unwrap(), nack_packet);
 }
+
