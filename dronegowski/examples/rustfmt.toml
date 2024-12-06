@@ -1,0 +1,13 @@
+# rustfmt.toml
+
+# Enforces spaces around operators
+use_small_heuristics = "Max"
+
+# Maximum line width
+max_width = 100
+
+# Control how imports are organized
+reorder_imports = true
+
+# Format macro calls consistently
+format_macro_matchers = true
