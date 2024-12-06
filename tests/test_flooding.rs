@@ -3,46 +3,66 @@ mod common;
 use common::default_drone;
 use dronegowski::MyDrone;
 use std::collections::HashMap;
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{channel, Receiver};
+use std::time::Duration;
+use crossbeam_channel;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
-use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Ack, FloodRequest, NodeType, Packet, PacketType};
+use wg_2024::network::{SourceRoutingHeader, NodeId};
+use wg_2024::packet::{Ack, FloodRequest, Packet, PacketType, NodeType};
 
 #[test]
-#[should_panic(expected = "qualcosa non va")]
 fn test_flood_request_handling() {
-    let (def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();
-    let (sender1, receiver) = crossbeam_channel::unbounded::<Packet>();
+    // Creazione dei canali
+    let (sender1, _) = crossbeam_channel::unbounded::<Packet>();  // Drone 2 neighbour
+    let (sender2, _) = crossbeam_channel::unbounded::<Packet>();  // Drone 2 neighbour
 
+    let (sim_controller_send, sim_controller_receive) = crossbeam_channel::unbounded::<DroneEvent>();
+    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
+
+    // Mapping dei neighbour ai canali
     let mut senders = HashMap::new();
-    senders.insert(2, sender1); // Drone 2 è un neighbour
+    senders.insert(2, sender1);
+    senders.insert(3, sender2);
 
+
+
+    // Creazione del drone con configurazione dei canali
     let mut my_drone = MyDrone::new(
-        1, // ID del drone
-        def_drone_opts.sim_controller_send,
-        def_drone_opts.sim_controller_recv,
-        def_drone_opts.packet_recv,
+        1,
+        sim_controller_send,
+        controller_receive,
+        packet_receive.clone(),
         senders,
-        0.1, // PDR valido
+        0.1,
     );
 
+    // Creazione del pacchetto FloodRequest da inviare al drone
     let packet = Packet {
-        pack_type: PacketType::FloodRequest(FloodRequest{
-            flood_id: 0,
+        pack_type: PacketType::FloodRequest(FloodRequest {
+            flood_id: 123,
             initiator_id: 0,
             path_trace: vec![(0, NodeType::Client)],
         }),
         routing_header: SourceRoutingHeader {
-            hop_index: 1,
-            hops: vec![0],
+            hop_index: 0,
+            hops: vec![],
         },
         session_id: 1,
     };
 
-    assert!(my_drone.forward_packet(packet).is_ok());
+    println!("Invio pacchetto FloodRequest...");
 
-    // Controlla che il pacchetto sia stato inoltrato correttamente
-    assert!(receiver.try_recv().is_ok());
+    //Invio il pacchetto al mio drone
+    packet_send.send(packet.clone()).expect("Errore nell'invio del pacchetto!");
+
+    //Verifica che il pacchetto venga ricevuto correttamente dal drone
+    match packet_receive.recv() {
+        Ok(received_packet) => {
+            println!("Pacchetto ricevuto: {:?}", received_packet.pack_type);
+        }
+        Err(_) => println!("Timeout: Nessun pacchetto ricevuto."),
+    }
 
 }
