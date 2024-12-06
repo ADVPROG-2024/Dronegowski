@@ -113,6 +113,7 @@ impl Drone for MyDrone {
                                 self.forward_packet_safe(&packet);
                             }
                         }
+
                         else if(self.state == DroneState::Crashing) {
                             self.state = DroneState::Crashed;
                             break; // Forse bisogna farlo in un altro modo controllare!
