@@ -66,14 +66,21 @@ impl Drone for MyDrone {
         loop {
             select! {
                 recv(self.packet_recv) -> packet_res => {
-                    match packet_res {
-                        Ok(packet) => {
-                            if let Some(node_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
-                                if *node_id == self.id {
-                                    match packet.pack_type {
-                                        PacketType::Ack(_) | PacketType::Nack(_) => {
-                                            if let Err(_) = self.forward_packet(packet.clone()) {
-                                                self.sim_controller_send.send(DroneEvent::PacketDropped(packet.clone())).unwrap();
+                    if let Ok(packet) = packet_res {
+                        if let Some(node_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
+                            if *node_id == self.id {
+                                match packet.pack_type {
+                                    PacketType::Ack(_) | PacketType::Nack(_) => {
+                                        match self.forward_packet(packet.clone()) {
+                                            Ok(()) => {
+                                                // Ack || Nack inoltrato correttamente
+                                                println!("Drone {} forwarded packet", self.id);
+                                            },
+                                            Err(_) => {
+                                                // Nack: ErrorInRouting || DestinationIsDrone
+                                                // Segnalato al SC che un pachetto ACK/NACK è stato droppato
+                                                println!("Drone {} send ack | nack", self.id);
+                                                self.sim_controller_send.send(DroneEvent::PacketDropped(packet.clone()));
                                             }
                                         },
                                         PacketType::MsgFragment(ref fragment) => {
@@ -259,7 +266,7 @@ impl MyDrone {
         Err("Incorrect value of PDR".to_string())
     }
 
-    fn add_sender(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
+    pub fn add_sender(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
         if self.packet_send.contains_key(&node_id) {
             Err(format!(
                 "Sender per il nodo {} è già presente nella mappa!",

@@ -1,12 +1,14 @@
 mod common;
 
 use common::default_drone;
+use crossbeam_channel::unbounded;
 use dronegowski::MyDrone;
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
-use wg_2024::packet::{Ack, Packet, PacketType};
+use wg_2024::packet::{Ack, Nack, NackType, Packet, PacketType};
+
 
 #[test]
 #[should_panic(expected = "pdr out of bounds")]
@@ -130,3 +132,131 @@ fn set_pdr_failure() {
     assert!(my_drone.set_pdr(1.5).is_err());
     assert!(my_drone.set_pdr(-0.1).is_err());
 }
+
+#[test]
+fn drone_listen_on_closed_channels() {
+    use crossbeam_channel::unbounded;
+
+    // Creiamo i canali
+    let (event_send, event_recv) = unbounded::<DroneEvent>();
+    let (command_send, command_recv) = unbounded::<DroneCommand>();
+    let (packet_send, packet_recv) = unbounded::<Packet>();
+
+    // Chiudiamo i canali lasciandoli fuori dallo scope
+    let _ = event_recv;
+    let _ = command_recv;
+    let _ = packet_recv;
+
+    // Creiamo il drone
+    let mut my_drone = MyDrone::new(
+        1,              // ID del drone
+        event_send,     // Sender degli eventi
+        command_recv,   // Receiver dei comandi (chiuso)
+        packet_recv,    // Receiver dei pacchetti (chiuso)
+        HashMap::new(), // Nessun neighbor
+        0.1,            // PDR valido
+    );
+
+    // Eseguiamo il drone in un thread separato
+    let handle = std::thread::spawn(move || {
+        my_drone.run(); // Deve terminare senza panico
+    });
+
+    // Attesa breve per assicurarsi che il thread termini
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    // Verifica che il thread non sia in deadlock
+    assert!(handle.join().is_ok());
+}
+
+#[test]
+fn send_ack_to_neighbor() {
+
+    // Creazione dei canali
+    let (controller_send, _recv_event) = unbounded();
+    let (_send_command, controller_recv) = unbounded();
+    let (_send_packet, packet_recv) = unbounded();
+
+    // Creazione del canale per il neighbor
+    let (neighbor_send, neighbor_recv) = unbounded();
+
+    // Crea una mappa per i neighbors
+    let mut packet_send = HashMap::new();
+    packet_send.insert(2, neighbor_send); // Drone 2 come neighbor
+
+    // Inizializza il drone
+    let mut my_drone = MyDrone::new(
+        1, // ID del drone
+        controller_send,
+        controller_recv,
+        packet_recv,
+        packet_send,
+        0.1, // PDR
+    );
+
+    // Creazione del pacchetto Ack
+    let packet = Packet {
+        pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 0,
+            hops: vec![1, 2], // Percorso: Drone 1 -> Drone 2
+        },
+        session_id: 1,
+    };
+
+    // Invia il pacchetto
+    assert!(my_drone.forward_packet(packet.clone()).is_ok());
+
+    // Controlla che il pacchetto sia stato ricevuto dal neighbor
+    let received_packet = neighbor_recv.try_recv();
+    assert!(received_packet.is_ok());
+    // assert_eq!(received_packet.unwrap(), packet);
+}
+
+#[test]
+fn send_nack_to_neighbor() {
+
+    // Creazione dei canali
+    let (controller_send, _recv_event) = unbounded();
+    let (_send_command, controller_recv) = unbounded();
+    let (_send_packet, packet_recv) = unbounded();
+
+    // Creazione del canale per il neighbor
+    let (neighbor_send, neighbor_recv) = unbounded();
+
+    // Crea una mappa per i neighbors
+    let mut packet_send = HashMap::new();
+    packet_send.insert(2, neighbor_send); // Drone 2 come neighbor
+
+    // Inizializza il drone
+    let mut my_drone = MyDrone::new(
+        1, // ID del drone
+        controller_send,
+        controller_recv,
+        packet_recv,
+        packet_send,
+        0.1, // PDR
+    );
+
+    // Creazione del pacchetto Nack
+    let nack_packet = Packet {
+        pack_type: PacketType::Nack(Nack {
+            fragment_index: 0, // Indice del frammento che ha causato il Nack
+            nack_type: NackType::ErrorInRouting(2), // Motivo del Nack
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 0,
+            hops: vec![1, 2], // Percorso: Drone 1 -> Drone 2
+        },
+        session_id: 1,
+    };
+
+    // Invia il pacchetto Nack
+    assert!(my_drone.forward_packet(nack_packet.clone()).is_ok());
+
+    // Controlla che il pacchetto sia stato ricevuto dal neighbor
+    let received_packet = neighbor_recv.try_recv();
+    assert!(received_packet.is_ok());
+    // assert_eq!(received_packet.unwrap(), nack_packet);
+}
+
