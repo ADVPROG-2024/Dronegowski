@@ -8,6 +8,7 @@ use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, FloodRequest, NodeType, Packet, PacketType};
 
+#[test]
 fn test_flood_request_handling() {
     let (def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();
 
