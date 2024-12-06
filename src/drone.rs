@@ -188,7 +188,7 @@ impl Drone for MyDrone {
                             }
                         }
                         else {
-                            if(self.state == DroneState::Crashing) {
+                            if self.state == DroneState::Crashing {
                                 self.state = DroneState::Crashed;
                                 break; // Forse bisogna farlo in un altro modo controllare!
                             }
