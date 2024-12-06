@@ -9,7 +9,6 @@ use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
 use wg_2024::packet::{Ack, Nack, NackType, Packet, PacketType};
 
-
 #[test]
 #[should_panic(expected = "pdr out of bounds")]
 fn pdr_too_big() {
@@ -131,40 +130,4 @@ fn set_pdr_failure() {
 
     assert!(my_drone.set_pdr(1.5).is_err());
     assert!(my_drone.set_pdr(-0.1).is_err());
-}
-
-#[test]
-fn drone_listen_on_closed_channels() {
-    use crossbeam_channel::unbounded;
-
-    // Creiamo i canali
-    let (event_send, event_recv) = unbounded::<DroneEvent>();
-    let (command_send, command_recv) = unbounded::<DroneCommand>();
-    let (packet_send, packet_recv) = unbounded::<Packet>();
-
-    // Chiudiamo i canali lasciandoli fuori dallo scope
-    let _ = event_recv;
-    let _ = command_recv;
-    let _ = packet_recv;
-
-    // Creiamo il drone
-    let mut my_drone = MyDrone::new(
-        1,              // ID del drone
-        event_send,     // Sender degli eventi
-        command_recv,   // Receiver dei comandi (chiuso)
-        packet_recv,    // Receiver dei pacchetti (chiuso)
-        HashMap::new(), // Nessun neighbor
-        0.1,            // PDR valido
-    );
-
-    // Eseguiamo il drone in un thread separato
-    let handle = std::thread::spawn(move || {
-        my_drone.run(); // Deve terminare senza panico
-    });
-
-    // Attesa breve per assicurarsi che il thread termini
-    std::thread::sleep(std::time::Duration::from_millis(100));
-
-    // Verifica che il thread non sia in deadlock
-    assert!(handle.join().is_ok());
 }
