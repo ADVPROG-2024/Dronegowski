@@ -23,7 +23,7 @@ pub struct MyDrone {
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Mappa dei canali per inviare pacchetti ai neighbours nodes
     pub pdr: f32,                                     // PDR
     pub state: DroneState,                            // Stato del drone
-    pub flood_id_vec: HashSet<u64>,                   // HashSet degli id delle FloodRequest ricevute
+    pub flood_id_vec: HashSet<(u64, u64)>,                   // HashSet degli id delle FloodRequest ricevute
 }
 
 impl PartialEq for DroneState {
@@ -107,8 +107,8 @@ impl Drone for MyDrone {
                                         }
                                     },
                                     PacketType::FloodRequest(mut flood_request) => {
-                                        if self.flood_id_vec.insert(flood_request.flood_id){
-                                            //Il flood_id non era presente, il che significa che la floodRequest passa per la prima volta in questo drone
+                                        if self.flood_id_vec.insert((flood_request.flood_id, packet.session_id)){
+                                            //Il flood_id di quella sessione non era presente, il che significa che la floodRequest passa per la prima volta in questo drone
                                             let Some((previous_id, _)) = flood_request.path_trace.get(flood_request.path_trace.len()-1);
                                             flood_request.path_trace.push((self.id, NodeType::Drone));
                                             if self.packet_send.capacity() <= 1{
@@ -117,6 +117,7 @@ impl Drone for MyDrone {
                                                 match self.forward_packet(flood_response.clone()) {
                                                     Ok(()) => {
                                                         // FloodResponse inoltrata correttamente
+                                                        println!("Drone {} has no neighbours, correctly send back a Flood Response", self.id);
                                                     },
                                                     Err(_) => {
                                                         // Nack: ErrorInRouting || DestinationIsDrone
@@ -129,6 +130,7 @@ impl Drone for MyDrone {
                                                 if &neighbour.0 != previous_id{
                                                     match self.forward_packet(packet.clone()) {
                                                         Ok(()) => {
+                                                            println!("Drone {} correctly send the Flood Request to neighbor with {} id", self.id, neighbour.0);
                                                             // FloodRequest inoltrata correttamente
                                                         },
                                                         Err(_) => {
@@ -139,13 +141,14 @@ impl Drone for MyDrone {
                                             }
                                         }
                                         else{
-                                            //Il flood_id era gia presente, significa che era gia passato per di qua, procedo a inviare indietro una floodResponse
+                                            //Il flood_id di quella sessione era già presente, significa che era gia passato per di qua, procedo a inviare indietro una floodResponse
                                             flood_request.path_trace.push((self.id, NodeType::Drone));
 
                                             let flood_response = Packet::new_flood_response(SourceRoutingHeader{hop_index: 1, hops: flood_request.path_trace.clone().rev()}, packet.session_id, FloodResponse {flood_id: flood_request.flood_id, path_trace: flood_request.path_trace});
                                             match self.forward_packet(flood_response.clone()) {
                                                 Ok(()) => {
                                                     // FloodResponse inoltrata correttamente
+                                                    println!("Drone {} already seen this Flood Request, correctly send back a Flood Response", self.id);
                                                 },
                                                 Err(_) => {
                                                     // Nack: ErrorInRouting || DestinationIsDrone
