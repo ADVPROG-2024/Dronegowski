@@ -1,13 +1,11 @@
 mod common;
 
 use common::default_drone;
-use crossbeam_channel::unbounded;
 use dronegowski::MyDrone;
 use std::collections::HashMap;
-use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
-use wg_2024::packet::{Ack, Nack, NackType, Packet, PacketType};
+use wg_2024::packet::{Ack, Packet, PacketType};
 
 #[test]
 #[should_panic(expected = "pdr out of bounds")]

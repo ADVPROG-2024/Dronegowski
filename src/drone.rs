@@ -141,8 +141,6 @@ impl Drone for MyDrone {
                 }
             }
         }
-        println!("Drone {} in esecuzione...", self.id);
-        println!("Drone {}: Uscito dal loop", self.id);
     }
 }
 
@@ -256,22 +254,23 @@ impl MyDrone {
     }
 
     fn handle_forwarding_error(&self, packet: &Packet, nack_type: NackType) {
-        let nack_packet = self.packet_nack(
-            packet.clone(),
-            Nack {
-                fragment_index: 0, // oppure il valore appropriato
-                nack_type,
-            },
-        );
+        // Se il pacchetto è un nack/send/floodResponse viene mandato al sim controller, altrimenti viene creato il nack_packet
 
-        if let Err(err) = self.forward_packet(nack_packet) {
-            match packet.pack_type {
-                PacketType::MsgFragment(_) | PacketType::FloodRequest(_) => {}
-                _ => {
-                    self.sim_controller_send
-                        .send(DroneEvent::PacketDropped(packet.clone()))
-                        .expect("TODO: panic message");
-                }
+        match packet.pack_type {
+            PacketType::Ack(_) | PacketType::Nack(_) | PacketType::FloodResponse(_) => {
+                self.sim_controller_send
+                    .send(DroneEvent::PacketDropped(packet.clone()))
+                    .expect("TODO: panic message");
+            }
+            _ => {
+                let nack_packet = self.packet_nack(
+                    packet.clone(),
+                    Nack {
+                        fragment_index: 0, // oppure il valore appropriato
+                        nack_type,
+                    },
+                );
+                self.forward_packet_safe(&nack_packet);
             }
         }
     }
