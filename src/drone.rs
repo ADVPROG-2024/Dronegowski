@@ -23,7 +23,7 @@ pub struct MyDrone {
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Mappa dei canali per inviare pacchetti ai neighbours nodes
     pub pdr: f32,                                     // PDR
     pub state: DroneState,                            // Stato del drone
-    pub flood_id_vec: HashSet<u64>,                   // HashSet degli id delle FloodRequest ricevute
+    pub flood_id_vec: HashSet<(u64, u64)>,                   // HashSet degli id delle FloodRequest ricevute
 }
 
 impl PartialEq for DroneState {
@@ -66,49 +66,58 @@ impl Drone for MyDrone {
         loop {
             select! {
                 recv(self.packet_recv) -> packet_res => {
-                    match packet_res {
-                        Ok(packet) => {
-                            if let Some(node_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
-                                if *node_id == self.id {
-                                    match packet.pack_type {
-                                        PacketType::Ack(_) | PacketType::Nack(_) => {
-                                            if let Err(_) = self.forward_packet(packet.clone()) {
-                                                self.sim_controller_send.send(DroneEvent::PacketDropped(packet.clone())).unwrap();
-                                            }
-                                        },
-                                        PacketType::MsgFragment(ref fragment) => {
-                                            // Se il Drone è in Crashing Behaviour allora non gestisce il MsgFragment
-                                            if self.state == DroneState::Crashed {
-                                                let nack_packet = self.packet_nack(packet.clone(), Nack {fragment_index: fragment.fragment_index, nack_type: NackType::ErrorInRouting(*packet.routing_header.hops.get(packet.routing_header.hop_index+1).unwrap())})
-                                                if let Err(err) = self.forward_packet(nack_packet) {
-                                                    panic!("{err:?}");
-                                                }
-                                            } else if self.drop_packet() {
-                                                let nack_packet = self.packet_nack(packet.clone(), Nack {
-                                                    fragment_index: fragment.fragment_index,
-                                                    nack_type: NackType::Dropped
-                                                });
-                                                if let Err(err) = self.forward_packet(nack_packet) {
-                                                    panic!("{err:?}");
-                                                }
-                                            } else if let Err(nack) = self.forward_packet(packet.clone()) {
-                                                let nack_packet = self.packet_nack(packet.clone(), nack);
-                                                if let Err(err) = self.forward_packet(nack_packet) {                            
-                                                    panic!("{err:?}");
-                                                }
+                    if let Ok(packet) = packet_res {
+                        if let Some(node_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
+                            if *node_id == self.id {
+                                match packet.pack_type {
+                                    PacketType::Ack(_) | PacketType::Nack(_) => {
+                                        match self.forward_packet(packet.clone()) {
+                                            Ok(()) => {
+                                                // Ack || Nack inoltrato correttamente
+                                                println!("Drone {} forwarded packet", self.id);
+                                            },
+                                            Err(_) => {
+                                                // Nack: ErrorInRouting || DestinationIsDrone
+                                                // Segnalato al SC che un pachetto ACK/NACK è stato droppato
+                                                println!("Drone {} send ack | nack", self.id);
+                                                self.sim_controller_send.send(DroneEvent::PacketDropped(packet.clone()));
                                             }
                                         }
-                                    PacketType::FloodRequest(mut floodRequest) => {
-                                        if self.flood_id_vec.insert(floodRequest.flood_id){
-                                            //Il flood_id non era presente, il che significa che la floodRequest passa per la prima volta in questo drone
-                                            let Some((previous_id, _)) = floodRequest.path_trace.get(floodRequest.path_trace.len()-1);
-                                            floodRequest.path_trace.push((self.id, NodeType::Drone));
+                                    },
+                                    PacketType::MsgFragment(ref fragment) => {
+                                        // Se il Drone è in Crashing Behaviour allora non gestisce il MsgFragment
+                                        if self.state == DroneState::Crashed {
+                                            let nack_packet = self.packet_nack(packet.clone(), Nack {fragment_index: fragment.fragment_index, nack_type: NackType::ErrorInRouting(*packet.routing_header.hops.get(packet.routing_header.hop_index+1).unwrap())});
+                                            if let Err(err) = self.forward_packet(nack_packet) {
+                                                panic!("{err:?}");
+                                            }
+                                        } else if self.drop_packet() {
+                                            let nack_packet = self.packet_nack(packet.clone(), Nack {
+                                                fragment_index: fragment.fragment_index,
+                                                nack_type: NackType::Dropped
+                                            });
+                                            if let Err(err) = self.forward_packet(nack_packet) {
+                                                panic!("{err:?}");
+                                            }
+                                        } else if let Err(nack) = self.forward_packet(packet.clone()) {
+                                            let nack_packet = self.packet_nack(packet.clone(), nack);
+                                            if let Err(err) = self.forward_packet(nack_packet) {
+                                                panic!("{err:?}");
+                                            }
+                                        }
+                                    },
+                                    PacketType::FloodRequest(mut flood_request) => {
+                                        if self.flood_id_vec.insert((flood_request.flood_id, packet.session_id)){
+                                            //Il flood_id di quella sessione non era presente, il che significa che la floodRequest passa per la prima volta in questo drone
+                                            let Some((previous_id, _)) = flood_request.path_trace.get(flood_request.path_trace.len()-1);
+                                            flood_request.path_trace.push((self.id, NodeType::Drone));
                                             if self.packet_send.capacity() <= 1{
                                                 //Il drone non ha altri vicini oltre al mandante, procedo a inviare indietro una floodResponse
-                                                let flood_response = Packet::new_flood_response(SourceRoutingHeader{hop_index: 1, hops: floodRequest.path_trace.iter().rev().cloned().collect()}, packet.session_id, FloodResponse {flood_id: floodRequest.flood_id, path_trace: floodRequest.path_trace})
+                                                let flood_response = Packet::new_flood_response(SourceRoutingHeader{hop_index: 1, hops: flood_request.path_trace.clone().rev()}, packet.session_id, FloodResponse {flood_id: flood_request.flood_id, path_trace: flood_request.path_trace});
                                                 match self.forward_packet(flood_response.clone()) {
                                                     Ok(()) => {
                                                         // FloodResponse inoltrata correttamente
+                                                        println!("Drone {} has no neighbours, correctly send back a Flood Response", self.id);
                                                     },
                                                     Err(_) => {
                                                         // Nack: ErrorInRouting || DestinationIsDrone
@@ -121,6 +130,7 @@ impl Drone for MyDrone {
                                                 if &neighbour.0 != previous_id{
                                                     match self.forward_packet(packet.clone()) {
                                                         Ok(()) => {
+                                                            println!("Drone {} correctly send the Flood Request to neighbor with {} id", self.id, neighbour.0);
                                                             // FloodRequest inoltrata correttamente
                                                         },
                                                         Err(_) => {
@@ -131,13 +141,14 @@ impl Drone for MyDrone {
                                             }
                                         }
                                         else{
-                                            //Il flood_id era gia presente, significa che era gia passato per di qua, procedo a inviare indietro una floodResponse
-                                            floodRequest.path_trace.push((self.id, NodeType::Drone));
+                                            //Il flood_id di quella sessione era già presente, significa che era gia passato per di qua, procedo a inviare indietro una floodResponse
+                                            flood_request.path_trace.push((self.id, NodeType::Drone));
 
-                                            let flood_response = Packet::new_flood_response(SourceRoutingHeader{hop_index: 1, hops: floodRequest.path_trace.iter().rev().cloned().collect()}, packet.session_id, FloodResponse {flood_id: floodRequest.flood_id, path_trace: floodRequest.path_trace})
+                                            let flood_response = Packet::new_flood_response(SourceRoutingHeader{hop_index: 1, hops: flood_request.path_trace.clone().rev()}, packet.session_id, FloodResponse {flood_id: flood_request.flood_id, path_trace: flood_request.path_trace});
                                             match self.forward_packet(flood_response.clone()) {
                                                 Ok(()) => {
                                                     // FloodResponse inoltrata correttamente
+                                                    println!("Drone {} already seen this Flood Request, correctly send back a Flood Response", self.id);
                                                 },
                                                 Err(_) => {
                                                     // Nack: ErrorInRouting || DestinationIsDrone
@@ -161,8 +172,9 @@ impl Drone for MyDrone {
                                         }
                                     },
                                 }
-                            } else {
-                                // Nack: UnexpectedRecipient
+                            }
+                            else {
+                            // Nack: UnexpectedRecipient
                                 match self.forward_packet(self.packet_nack(packet.clone(), Nack {fragment_index: 0, nack_type: NackType::UnexpectedRecipient(self.id)})) {
                                     Ok(()) => {
                                         // Nack packet inviato correttamente al prossimo nodo
@@ -173,7 +185,7 @@ impl Drone for MyDrone {
                                 }
                             }
                         }
-                        Err(_) => {
+                        else {
                             if(self.state == DroneState::Crashing) {
                                 self.state = DroneState::Crashed;
                                 break; // Forse bisogna farlo in un altro modo controllare!
@@ -257,7 +269,7 @@ impl MyDrone {
         Err("Incorrect value of PDR".to_string())
     }
 
-    fn add_sender(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
+    pub fn add_sender(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
         if self.packet_send.contains_key(&node_id) {
             Err(format!(
                 "Sender per il nodo {} è già presente nella mappa!",

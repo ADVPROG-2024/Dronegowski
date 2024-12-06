@@ -9,48 +9,41 @@ use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{Ack, FloodRequest, NodeType, Packet, PacketType};
 
 fn test_flood_request_handling() {
+    let (def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();
 
-    let (mut def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();
-    MyDrone::new(
+    let (sender1, receiver) = crossbeam_channel::unbounded::<Packet>();
+    let (sender2, receiver) = crossbeam_channel::unbounded::<Packet>();
+
+    let mut senders = HashMap::new();
+    senders.insert(2, sender1); // Drone 2 è un neighbour
+    senders.insert(3, sender2); // Drone 3 è un neighbour
+
+
+    let mut my_drone = MyDrone::new(
         1, // ID del drone
         def_drone_opts.sim_controller_send,
         def_drone_opts.sim_controller_recv,
         def_drone_opts.packet_recv,
-        def_drone_opts.packet_send,
-        1.0, // PDR fuori dai limiti
+        senders,
+        0.1, // PDR valido
     );
 
-    // Avvia il drone in un thread separato
-    let drone_thread = std::thread::spawn(move || {
-        def_drone_opts.run();
-    });
-    let node_id: NodeId = 0;
-    // Crea una FloodRequest e inviala al drone
-    let flood_request = Packet {
-        pack_type: PacketType::FloodRequest(FloodRequest {
-            flood_id: 123,            // ID unico della flood
-            ,
-            path_trace: vec![(0, NodeType::Drone)], // Percorso iniziale
+    let packet = Packet {
+        pack_type: PacketType::FloodRequest(FloodRequest{
+            flood_id: 0,
+            initiator_id: 0,
+            path_trace: vec![(0, NodeType::Client)],
         }),
         routing_header: SourceRoutingHeader {
-            hop_index: 0,
-            hops: vec![1], // Il drone è il destinatario
+            hop_index: 1,
+            hops: vec![],
         },
-        session_id: 456, // Session ID
+        session_id: 1,
     };
 
-    packet_send_to_drone.send(flood_request.clone()).unwrap();
+    assert!(my_drone.forward_packet(packet).is_ok());
 
-    // Verifica la FloodRequest inoltrata al neighbour
-    let received_packet = drone_to_neighbour_recv.recv().unwrap();
-    if let PacketType::FloodRequest(ref req) = received_packet.pack_type {
-        assert_eq!(req.flood_id, 123);
-        assert!(req.path_trace.contains(&(1, NodeType::Drone)));
-    } else {
-        panic!("Il drone ha inviato un pacchetto non valido: {:?}", received_packet);
-    }
+    // Controlla che il pacchetto sia stato inoltrato correttamente
+    assert!(receiver.try_recv().is_ok());
 
-    // Invia un comando per fermare il drone
-    controller_send.send(DroneCommand::Crash).unwrap();
-    drone_thread.join().unwrap();
 }
