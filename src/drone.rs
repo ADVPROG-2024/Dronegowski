@@ -66,7 +66,7 @@ impl Drone for MyDrone {
         loop {
             select! {
                 recv(self.packet_recv) -> packet_res => {
-                    if let Ok(packet) = packet_res {
+                    if let Ok(mut packet) = packet_res {
                         if let Some(node_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
                             if *node_id == self.id {
                                 match packet.pack_type {
@@ -106,14 +106,14 @@ impl Drone for MyDrone {
                                             }
                                         }
                                     },
-                                    PacketType::FloodRequest(mut flood_request) => {
+                                    PacketType::FloodRequest(ref mut flood_request) => {
                                         if self.flood_id_vec.insert((flood_request.flood_id, packet.session_id)){
                                             //Il flood_id di quella sessione non era presente, il che significa che la floodRequest passa per la prima volta in questo drone
-                                            let Some((previous_id, _)) = flood_request.path_trace.get(flood_request.path_trace.len()-1);
+                                            let previous_id = flood_request.path_trace.get(flood_request.path_trace.len()-1).cloned();
                                             flood_request.path_trace.push((self.id, NodeType::Drone));
                                             if self.packet_send.capacity() <= 1{
                                                 //Il drone non ha altri vicini oltre al mandante, procedo a inviare indietro una floodResponse
-                                                let flood_response = Packet::new_flood_response(SourceRoutingHeader{hop_index: 1, hops: flood_request.path_trace.clone().rev()}, packet.session_id, FloodResponse {flood_id: flood_request.flood_id, path_trace: flood_request.path_trace});
+                                                let flood_response = Packet::new_flood_response(SourceRoutingHeader{hop_index: 1, hops: flood_request.path_trace.iter().map(|(id, _)| *id).rev().collect()}, packet.session_id, FloodResponse {flood_id: flood_request.flood_id, path_trace: flood_request.path_trace.clone()});
                                                 match self.forward_packet(flood_response.clone()) {
                                                     Ok(()) => {
                                                         // FloodResponse inoltrata correttamente
@@ -126,15 +126,17 @@ impl Drone for MyDrone {
                                                     }
                                                 }
                                             }
-                                            for neighbour in self.packet_send{
-                                                if &neighbour.0 != previous_id{
-                                                    match self.forward_packet(packet.clone()) {
-                                                        Ok(()) => {
-                                                            println!("Drone {} correctly send the Flood Request to neighbor with {} id", self.id, neighbour.0);
-                                                            // FloodRequest inoltrata correttamente
-                                                        },
-                                                        Err(_) => {
+                                            else{
+                                                for neighbour in self.packet_send.clone(){
+                                                    if neighbour.0 != previous_id.unwrap().0{
+                                                        match self.forward_packet(packet.clone()) {
+                                                            Ok(()) => {
+                                                                println!("Drone {} correctly send the Flood Request to neighbor with {} id", self.id, neighbour.0);
+                                                                // FloodRequest inoltrata correttamente
+                                                            },
+                                                            Err(_) => {
 
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -144,7 +146,7 @@ impl Drone for MyDrone {
                                             //Il flood_id di quella sessione era già presente, significa che era gia passato per di qua, procedo a inviare indietro una floodResponse
                                             flood_request.path_trace.push((self.id, NodeType::Drone));
 
-                                            let flood_response = Packet::new_flood_response(SourceRoutingHeader{hop_index: 1, hops: flood_request.path_trace.clone().rev()}, packet.session_id, FloodResponse {flood_id: flood_request.flood_id, path_trace: flood_request.path_trace});
+                                            let flood_response = Packet::new_flood_response(SourceRoutingHeader{hop_index: 1, hops: flood_request.path_trace.iter().map(|(id, _)| *id).rev().collect()}, packet.session_id, FloodResponse {flood_id: flood_request.flood_id, path_trace: flood_request.path_trace.clone()});
                                             match self.forward_packet(flood_response.clone()) {
                                                 Ok(()) => {
                                                     // FloodResponse inoltrata correttamente
