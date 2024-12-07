@@ -1,4 +1,4 @@
-use crossbeam_channel::{select, Receiver, Sender};
+use crossbeam_channel::{select, select_biased, Receiver, Sender};
 use rand::Rng;
 use std::cmp::PartialEq;
 use std::collections::{HashMap, HashSet};
@@ -76,17 +76,17 @@ impl Drone for MyDrone {
         loop {
             match self.state {
                 DroneState::Active => {
-                    select! {
-                        recv(self.packet_recv) -> packet_res => {
-                            if let Ok(packet) = packet_res {
-                                self.handle_packet(packet);
-                            }
-                        },
+                    select_biased! {
                         recv(self.sim_controller_recv) -> command_res => {
                             if let Ok(command) = command_res {
                                 self.handle_command(command);
                             }
                         }
+                        recv(self.packet_recv) -> packet_res => {
+                            if let Ok(packet) = packet_res {
+                                self.handle_packet(packet);
+                            }
+                        },
                     }
                 }
                 DroneState::Crashing => {
