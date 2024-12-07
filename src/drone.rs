@@ -83,12 +83,12 @@ impl Drone for MyDrone {
                             if let Ok(command) = command_res {
                                 self.handle_command(command);
                             }
-                        }
+                        },
                         recv(self.packet_recv) -> packet_res => {
                             if let Ok(packet) = packet_res {
                                 self.handle_packet(packet);
                             }
-                        },
+                        }
                     }
                 }
                 DroneState::Crashing => {
