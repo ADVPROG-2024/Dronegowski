@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet;
+use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DroneState {
@@ -174,8 +175,7 @@ impl MyDrone {
                     );
                     self.forward_packet_safe(&flood_response);
                     println!("Drone {} correctly sent back a Flood Response because has already received this flood request",self.id);
-                }
-            },
+                }            },
             _ => {
                 if let Some(node_id) = packet.routing_header.hops.get(packet.routing_header.hop_index) {
                     if *node_id == self.id {
@@ -225,7 +225,7 @@ impl MyDrone {
             }
         }
     }
-  
+
     // Metodo per inviare pacchetti al prossimo nodo presente nell'hops
     pub fn forward_packet(&self, mut packet: Packet) -> Result<(), Nack> {
         packet.routing_header.hop_index += 1;
