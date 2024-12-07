@@ -1,7 +1,7 @@
 mod common;
 
 use crossbeam_channel::unbounded;
-use dronegowski::MyDrone;
+use dronegowski::{DroneDebugOption, MyDrone};
 use std::collections::HashMap;
 use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
@@ -31,6 +31,8 @@ fn send_ack_to_neighbor() {
         0.1, // PDR
     );
 
+    my_drone.set_debug_option_active(&DroneDebugOption::Ack);
+
     // Creazione del pacchetto Ack
     let packet = Packet {
         pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
@@ -42,13 +44,12 @@ fn send_ack_to_neighbor() {
     };
 
     // Invia il pacchetto
-    assert!(my_drone.forward_packet(packet).is_ok());
+    my_drone.forward_packet_safe(&packet);
 
     // Controlla che il pacchetto sia stato ricevuto dal neighbor
     let received_packet = neighbor_recv.try_recv();
-    println!("Pacchetto ricevuto! Packet: {received_packet:?}");
+    // println!("Pacchetto ricevuto! Packet: {received_packet:?}");
     assert!(received_packet.is_ok());
-    // assert_eq!(received_packet.unwrap(), packet);
 }
 
 #[test]
