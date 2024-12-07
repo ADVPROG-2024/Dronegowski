@@ -67,6 +67,10 @@ impl Drone for MyDrone {
             select! {
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(mut packet) = packet_res {
+                        if self.state == DroneState::Crashing {
+                                    self.state = DroneState::Crashed;
+                                    break;
+                        }
                         match packet.pack_type {
                             PacketType::FloodRequest(ref mut flood_request) => {
                                 if self.flood_id_vec.insert((flood_request.flood_id, packet.session_id)) {
@@ -137,12 +141,10 @@ impl Drone for MyDrone {
                                             },
                                             _ => (),
                                         }
-                                    } else {
+                                    }
+                                    else {
                                         self.forward_packet_safe(&packet);
                                     }
-                                } else if self.state == DroneState::Crashing {
-                                    self.state = DroneState::Crashed;
-                                    break;
                                 }
                             }
                         }
