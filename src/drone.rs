@@ -23,8 +23,7 @@ pub struct MyDrone {
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Mappa dei canali per inviare pacchetti ai neighbours nodes
     pub pdr: f32,                                     // PDR
     state: DroneState,                                // Stato del drone
-    pub flood_id_vec: HashSet<(u64, u64)>, // HashSet degli id delle FloodRequest ricevute
-                                           // drone_options: HashMap<DroneOption, bool>
+    pub flood_id_vec: HashSet<(u64, u64)>, // HashSet delle flood request gia ricevute
 }
 
 impl Drone for MyDrone {
