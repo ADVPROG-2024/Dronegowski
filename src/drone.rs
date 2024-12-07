@@ -8,7 +8,7 @@ use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
 
 #[derive(Clone, Debug, PartialEq)]
-enum DroneState {
+pub enum DroneState {
     Active,
     Crashing,
     Crashed,
@@ -22,7 +22,7 @@ pub struct MyDrone {
     pub packet_recv: Receiver<Packet>,           // Canale per ricevere pacchetti
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Mappa dei canali per inviare pacchetti ai neighbours nodes
     pub pdr: f32,                                     // PDR
-    state: DroneState,                                // Stato del drone
+    pub state: DroneState,                            // Stato del drone
     pub flood_id_vec: HashSet<(u64, u64)>, // HashSet degli id delle FloodRequest ricevute
                                            // drone_options: HashMap<DroneOption, bool>
 }
@@ -63,7 +63,7 @@ impl Drone for MyDrone {
                 DroneState::Active => {
                     select! {
                         recv(self.packet_recv) -> packet_res => {
-                            if let Ok(mut packet) = packet_res {
+                            if let Ok(packet) = packet_res {
                                 self.handle_packet(packet);
                             }
                         },
@@ -90,7 +90,7 @@ impl Drone for MyDrone {
                     }
                 }
                 DroneState::Crashed => {
-                    println!("Drone {} is in Crashed state.", self.id);
+                    println!("Drone {} is in Crashed state. Exiting loop", self.id);
                     break;
                 }
             }
@@ -278,14 +278,13 @@ impl MyDrone {
     }
 
     pub fn add_neighbor(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
-        if self.packet_send.contains_key(&node_id) {
-            Err(format!(
-                "Sender per il nodo {} è già presente nella mappa!",
-                node_id
-            ))
-        } else {
-            self.packet_send.insert(node_id, sender);
+        if let std::collections::hash_map::Entry::Vacant(e) = self.packet_send.entry(node_id) {
+            e.insert(sender);
             Ok(())
+        } else {
+            Err(format!(
+                "Sender per il nodo {node_id} è già presente nella mappa!",
+            ))
         }
     }
 
@@ -338,7 +337,6 @@ impl MyDrone {
 
     fn handle_forwarding_error(&self, packet: &Packet, nack_type: NackType) {
         // Se il pacchetto è un nack/send/floodResponse viene mandato al sim controller, altrimenti viene creato il nack_packet e viene mandato
-
         match packet.pack_type {
             PacketType::Ack(_) | PacketType::Nack(_) | PacketType::FloodResponse(_) => {
                 self.sim_controller_send
