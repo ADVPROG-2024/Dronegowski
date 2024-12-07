@@ -8,7 +8,7 @@ use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
 
 #[derive(Clone, Debug, PartialEq)]
-enum DroneState {
+pub enum DroneState {
     Active,
     Crashing,
     Crashed,
@@ -24,6 +24,7 @@ pub struct MyDrone {
     pub pdr: f32,                                     // PDR
     pub state: DroneState,                                // Stato del drone
     pub flood_id_vec: HashSet<(u64, u64)>, // HashSet delle flood request gia ricevute
+
 }
 
 impl Drone for MyDrone {
@@ -171,10 +172,13 @@ impl MyDrone {
                         self.forward_packet_safe(&packet);
                     }
                 }
+                DroneState::Crashed => {
+                    println!("Drone {} is in Crashed state. Exiting loop", self.id);
+                    break;
+                }
             }
         }
     }
-
     fn handle_command(&mut self, command: DroneCommand) {
         match command {
             DroneCommand::SetPacketDropRate(pdr) => {
@@ -195,6 +199,7 @@ impl MyDrone {
             }
         }
     }
+  
     // Metodo per inviare pacchetti al prossimo nodo presente nell'hops
     pub fn forward_packet(&self, mut packet: Packet) -> Result<(), Nack> {
         packet.routing_header.hop_index += 1;
@@ -234,7 +239,6 @@ impl MyDrone {
         }
     }
 
-
     pub fn forward_packet_flood_request(&self, packet: Packet, neighbour: (NodeId, Sender<Packet>) ){
         println!("Sender di Drone {} -> {:?}", self.id, neighbour.0);
         neighbour.1.send(packet).expect("C'è un problema");
@@ -251,14 +255,13 @@ impl MyDrone {
     }
 
     pub fn add_neighbor(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
-        if self.packet_send.contains_key(&node_id) {
-            Err(format!(
-                "Sender per il nodo {} è già presente nella mappa!",
-                node_id
-            ))
-        } else {
-            self.packet_send.insert(node_id, sender);
+        if let std::collections::hash_map::Entry::Vacant(e) = self.packet_send.entry(node_id) {
+            e.insert(sender);
             Ok(())
+        } else {
+            Err(format!(
+                "Sender per il nodo {node_id} è già presente nella mappa!",
+            ))
         }
     }
 
@@ -311,7 +314,6 @@ impl MyDrone {
 
     fn handle_forwarding_error(&self, packet: &Packet, nack_type: NackType) {
         // Se il pacchetto è un nack/send/floodResponse viene mandato al sim controller, altrimenti viene creato il nack_packet e viene mandato
-
         match packet.pack_type {
             PacketType::Ack(_) | PacketType::Nack(_) | PacketType::FloodResponse(_) => {
                 self.sim_controller_send
