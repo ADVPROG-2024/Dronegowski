@@ -1,4 +1,5 @@
 mod common;
+mod test_sc_command;
 
 use common::default_drone;
 use dronegowski::MyDrone;
@@ -56,43 +57,10 @@ fn neighbor_is_self() {
 
 // Per utilizzare questo test bisogna rendere forward_packet public
 #[test]
-fn forward_packet_success() {
-    let (def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();
-
-    let (sender, receiver) = crossbeam_channel::unbounded::<Packet>();
-    let mut senders = HashMap::new();
-    senders.insert(2, sender); // Drone 2 è il neighbour
-
-    let mut my_drone = MyDrone::new(
-        1, // ID del drone
-        def_drone_opts.sim_controller_send,
-        def_drone_opts.sim_controller_recv,
-        def_drone_opts.packet_recv,
-        senders,
-        0.1, // PDR valido
-    );
-
-    let packet = Packet {
-        pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
-        routing_header: SourceRoutingHeader {
-            hop_index: 0,
-            hops: vec![1, 2], // Percorso: Drone 1 -> Drone 2
-        },
-        session_id: 1,
-    };
-
-    assert!(my_drone.forward_packet(packet).is_ok());
-
-    // Controlla che il pacchetto sia stato inoltrato correttamente
-    assert!(receiver.try_recv().is_ok());
-}
-
-// Per utilizzare questo test bisogna rendere forward_packet public
-#[test]
 fn forward_packet_no_neighbor() {
     let (def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();
 
-    let mut my_drone = MyDrone::new(
+    let my_drone = MyDrone::new(
         1, // ID del drone
         def_drone_opts.sim_controller_send,
         def_drone_opts.sim_controller_recv,
@@ -113,7 +81,6 @@ fn forward_packet_no_neighbor() {
     assert!(my_drone.forward_packet(packet).is_err());
 }
 
-// Per utilizzare questo test bisogna rendere set_pdr public
 #[test]
 fn set_pdr_failure() {
     let (def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();

@@ -7,10 +7,8 @@ use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
 use wg_2024::packet::{Ack, Nack, NackType, Packet, PacketType};
 
-
 #[test]
 fn send_ack_to_neighbor() {
-
     // Creazione dei canali
     let (controller_send, _recv_event) = unbounded();
     let (_send_command, controller_recv) = unbounded();
@@ -44,17 +42,17 @@ fn send_ack_to_neighbor() {
     };
 
     // Invia il pacchetto
-    assert!(my_drone.forward_packet(packet.clone()).is_ok());
+    assert!(my_drone.forward_packet(packet).is_ok());
 
     // Controlla che il pacchetto sia stato ricevuto dal neighbor
     let received_packet = neighbor_recv.try_recv();
+    println!("Pacchetto ricevuto! Packet: {received_packet:?}");
     assert!(received_packet.is_ok());
     // assert_eq!(received_packet.unwrap(), packet);
 }
 
 #[test]
 fn send_nack_to_neighbor() {
-
     // Creazione dei canali
     let (controller_send, _recv_event) = unbounded();
     let (_send_command, controller_recv) = unbounded();
@@ -95,7 +93,7 @@ fn send_nack_to_neighbor() {
 
     // Controlla che il pacchetto sia stato ricevuto dal neighbor
     let received_packet = neighbor_recv.try_recv();
+    println!("Pacchetto ricevuto! Packet: {received_packet:?}");
     assert!(received_packet.is_ok());
     // assert_eq!(received_packet.unwrap(), nack_packet);
 }
-
