@@ -58,7 +58,7 @@ mod tests {
         msg.routing_header.hop_index = 2;
 
         // d2 receives packet from d1
-        //assert_eq!(d2_recv.recv().unwrap(), msg);    // non è possibile testare l'uguglianza tra il pacchetto inviato e quello ricevuto
+        assert_eq!(d2_recv.recv().unwrap(), msg);    // non è possibile testare l'uguglianza tra il pacchetto inviato e quello ricevuto
         // in quanto il compilatore dice che non è implementatato PartialEq, ma lo è
     }
 
