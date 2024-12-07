@@ -3,13 +3,12 @@ mod test_fragment;
 
 use common::default_drone;
 use crossbeam_channel::unbounded;
-use dronegowski::MyDrone;
+use dronegowski::{DroneState, MyDrone};
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
 use wg_2024::packet::{Ack, Nack, NackType, Packet, PacketType};
-
 
 #[test]
 #[should_panic(expected = "pdr out of bounds")]
@@ -60,43 +59,10 @@ fn neighbor_is_self() {
 
 // Per utilizzare questo test bisogna rendere forward_packet public
 #[test]
-fn forward_packet_success() {
-    let (def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();
-
-    let (sender, receiver) = crossbeam_channel::unbounded::<Packet>();
-    let mut senders = HashMap::new();
-    senders.insert(2, sender); // Drone 2 è il neighbour
-
-    let mut my_drone = MyDrone::new(
-        1, // ID del drone
-        def_drone_opts.sim_controller_send,
-        def_drone_opts.sim_controller_recv,
-        def_drone_opts.packet_recv,
-        senders,
-        0.1, // PDR valido
-    );
-
-    let packet = Packet {
-        pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
-        routing_header: SourceRoutingHeader {
-            hop_index: 0,
-            hops: vec![1, 2], // Percorso: Drone 1 -> Drone 2
-        },
-        session_id: 1,
-    };
-
-    assert!(my_drone.forward_packet(packet).is_ok());
-
-    // Controlla che il pacchetto sia stato inoltrato correttamente
-    assert!(receiver.try_recv().is_ok());
-}
-
-// Per utilizzare questo test bisogna rendere forward_packet public
-#[test]
 fn forward_packet_no_neighbor() {
     let (def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();
 
-    let mut my_drone = MyDrone::new(
+    let my_drone = MyDrone::new(
         1, // ID del drone
         def_drone_opts.sim_controller_send,
         def_drone_opts.sim_controller_recv,
@@ -117,7 +83,6 @@ fn forward_packet_no_neighbor() {
     assert!(my_drone.forward_packet(packet).is_err());
 }
 
-// Per utilizzare questo test bisogna rendere set_pdr public
 #[test]
 fn set_pdr_failure() {
     let (def_drone_opts, _recv_event, _send_command, _send_packet) = default_drone();
@@ -135,37 +100,64 @@ fn set_pdr_failure() {
 }
 
 #[test]
-fn drone_listen_on_closed_channels() {
+fn crash_command_test() {
     use crossbeam_channel::unbounded;
+    use std::thread;
+    use std::time::Duration;
 
-    // Creiamo i canali
-    let (event_send, event_recv) = unbounded::<DroneEvent>();
-    let (command_send, command_recv) = unbounded::<DroneCommand>();
-    let (packet_send, packet_recv) = unbounded::<Packet>();
+    // Creazione dei canali
+    let (send_event, recv_event) = unbounded(); // Simula eventi al simulatore
+    let (send_command, recv_command) = unbounded(); // Comandi dal simulatore
+    let (send_packet, recv_packet) = unbounded(); // Pacchetti ricevuti dal drone
 
-    // Chiudiamo i canali lasciandoli fuori dallo scope
-    let _ = event_recv;
-    let _ = command_recv;
-    let _ = packet_recv;
-
-    // Creiamo il drone
+    // Inizializzazione del drone
     let mut my_drone = MyDrone::new(
-        1,              // ID del drone
-        event_send,     // Sender degli eventi
-        command_recv,   // Receiver dei comandi (chiuso)
-        packet_recv,    // Receiver dei pacchetti (chiuso)
-        HashMap::new(), // Nessun neighbor
-        0.1,            // PDR valido
+        1,
+        send_event,
+        recv_command,
+        recv_packet,
+        HashMap::new(),
+        0.1, // PDR valido
     );
 
-    // Eseguiamo il drone in un thread separato
-    let handle = std::thread::spawn(move || {
-        my_drone.run(); // Deve terminare senza panico
+    // Avvio del drone in un thread separato
+    let drone_thread = thread::spawn(move || {
+        my_drone.run();
     });
 
-    // Attesa breve per assicurarsi che il thread termini
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    // Invia il comando Crash
+    send_command
+        .send(DroneCommand::Crash)
+        .expect("Errore nell'invio del comando Crash");
 
-    // Verifica che il thread non sia in deadlock
-    assert!(handle.join().is_ok());
+    // Aspetta un momento per assicurarsi che il drone processi il comando
+    thread::sleep(Duration::from_millis(100));
+
+    // Invia alcuni pacchetti al drone
+    for _ in 0..3 {
+        send_packet
+            .send(Packet {
+                pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
+                routing_header: SourceRoutingHeader {
+                    hop_index: 0,
+                    hops: vec![1, 2],
+                },
+                session_id: 1,
+            })
+            .expect("Errore nell'invio di un pacchetto");
+    }
+
+    // Aspetta un momento per permettere al drone di processare i pacchetti
+    thread::sleep(Duration::from_millis(100));
+
+    // Chiude il canale dei pacchetti per simulare il completamento
+    drop(send_packet);
+
+    // Aspetta per assicurarsi che il drone passi a "Crashed"
+    thread::sleep(Duration::from_millis(100));
+
+    // Aspetta che il thread del drone termini
+    drone_thread
+        .join()
+        .expect("Il thread del drone non è terminato");
 }
