@@ -1,19 +1,19 @@
 mod common;
 
 use dronegowski::MyDrone;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crossbeam_channel;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{SourceRoutingHeader};
-use wg_2024::packet::{FloodRequest, Packet, PacketType, NodeType};
+use wg_2024::packet::{FloodRequest, Packet, PacketType, NodeType, FloodResponse};
 
 #[test]
 fn test_flood_request_handling() {
     // Creazione dei canali
     let (sender1, receiver1) = crossbeam_channel::unbounded::<Packet>();
 
-    let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
+    let (sim_controller_send, sim_controller_recv) = crossbeam_channel::unbounded::<DroneEvent>();
     let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
 
@@ -27,7 +27,7 @@ fn test_flood_request_handling() {
         sim_controller_send,
         controller_receive,
         packet_receive.clone(),
-        senders,
+        senders.clone(),
         0.0
     );
 
@@ -54,9 +54,23 @@ fn test_flood_request_handling() {
     //Invio il pacchetto al mio drone
     packet_send.send(packet.clone()).expect("Error sending the flood request...");
 
+    let packet_test = Packet {
+        pack_type: PacketType::FloodRequest(FloodRequest {
+            flood_id: 123,
+            initiator_id: 0,
+            path_trace: vec![(0, NodeType::Client), (1, NodeType::Drone)],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 0,
+            hops: vec![],
+        },
+        session_id: 1,
+    };
+
     //Verifica che il pacchetto venga ricevuto correttamente dai vicini
     match receiver1.recv() {
         Ok(received_packet) => {
+            assert_eq!(packet_test.clone(), received_packet.clone());
             println!("Packet successfully received by the node {:?}", received_packet.pack_type);
         }
         Err(_) => println!("Timeout: No packet received."),
@@ -115,11 +129,24 @@ fn test_flood_request_no_neighbour(){
         my_drone.run();
     });
 
+    let packet_test = Packet {
+        pack_type: PacketType::FloodResponse(FloodResponse {
+            flood_id: 123,
+            path_trace: vec![(0, NodeType::Drone), (1, NodeType::Drone)],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![1, 0],
+        },
+        session_id: 1,
+    };
+
     //Invio il pacchetto al mio drone
     packet_send_my_drone.send(packet.clone()).expect("Error sending the flood request...");
 
     match packet_receive_test_drone.recv() {
         Ok(received_packet) => {
+            assert_eq!(packet_test.clone(), received_packet.clone());
             println!("Packet successfully received by the node {:?}", received_packet.pack_type);
         }
         Err(_) => println!("Timeout: No packet received."),
@@ -166,7 +193,7 @@ fn test_flood_request_already_received(){
         pack_type: PacketType::FloodRequest(FloodRequest {
             flood_id: 123,
             initiator_id: 0,
-            path_trace: vec![(1, NodeType::Drone), (0, NodeType::Drone)],
+            path_trace: vec![(0, NodeType::Drone)],
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 0,
@@ -184,16 +211,45 @@ fn test_flood_request_already_received(){
     //Invio il pacchetto al mio drone
     packet_send_my_drone.send(packet.clone()).expect("Error sending the flood request...");
 
+    let packet_test1 = Packet {
+        pack_type: PacketType::FloodRequest(FloodRequest {
+            flood_id: 123,
+            initiator_id: 0,
+            path_trace: vec![(0, NodeType::Drone), (1, NodeType::Drone)],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 0,
+            hops: vec![],
+        },
+        session_id: 1,
+    };
+
+    let packet_test2 = Packet {
+        pack_type: PacketType::FloodResponse(FloodResponse {
+            flood_id: 123,
+            path_trace: vec![(0, NodeType::Drone), (1, NodeType::Drone)],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![1,0],
+        },
+        session_id: 1,
+    };
+
     match receiver1.recv() {
         Ok(received_packet) => {
+            assert_eq!(packet_test1.clone(), received_packet.clone());
             println!("Packet successfully received by the node {:?}", received_packet.pack_type);
-            packet_send_my_drone.send(packet.clone()).expect("Error sending the flood request...");
         }
         Err(_) => println!("Timeout: No packet received."),
     }
 
+    packet_send_my_drone.send(packet.clone()).expect("Error sending the flood request...");
+
+
     match packet_receive_test_drone.recv() {
         Ok(received_packet) => {
+            assert_eq!(packet_test2.clone(), received_packet.clone());
             println!("Packet successfully received by the node {:?}", received_packet.pack_type);
         }
         Err(_) => println!("Timeout: No packet received."),

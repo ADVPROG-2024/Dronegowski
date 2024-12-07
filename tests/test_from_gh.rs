@@ -58,8 +58,9 @@ mod tests {
         msg.routing_header.hop_index = 2;
 
         // d2 receives packet from d1
-        assert_eq!(d2_recv.recv().unwrap(), msg);    // non è possibile testare l'uguglianza tra il pacchetto inviato e quello ricevuto
-                                                     // in quanto il compilatore dice che non è implementatato PartialEq, ma lo è
+        assert_eq!(d2_recv.recv().unwrap(), msg);
+                                                     
+
     }
 
     /// Checks if the packet is dropped by one drone. The drone MUST have 100% packet drop rate, otherwise the test will fail sometimes.
