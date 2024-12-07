@@ -1,15 +1,13 @@
 mod common;
+mod test_from_gh;
 
-use common::default_drone;
 use dronegowski::MyDrone;
 use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver};
-use std::time::Duration;
 use crossbeam_channel;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
-use wg_2024::network::{SourceRoutingHeader, NodeId};
-use wg_2024::packet::{Ack, FloodRequest, Packet, PacketType, NodeType};
+use wg_2024::network::SourceRoutingHeader;
+use wg_2024::packet::{FloodRequest, NodeType, Packet, PacketType};
 
 #[test]
 fn test_flood_request_handling() {
