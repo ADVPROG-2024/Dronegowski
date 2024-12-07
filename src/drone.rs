@@ -90,7 +90,7 @@ impl Drone for MyDrone {
                     }
                 }
                 DroneState::Crashed => {
-                    println!("Drone {} is in Crashed state. Exiting loop.", self.id);
+                    println!("Drone {} is in Crashed state.", self.id);
                     break;
                 }
             }
