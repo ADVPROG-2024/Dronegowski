@@ -1,5 +1,4 @@
 mod common;
-mod test_fragment;
 
 use common::default_drone;
 use crossbeam_channel::unbounded;
