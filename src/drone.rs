@@ -172,10 +172,6 @@ impl MyDrone {
                         self.forward_packet_safe(&packet);
                     }
                 }
-                DroneState::Crashed => {
-                    println!("Drone {} is in Crashed state. Exiting loop", self.id);
-                    break;
-                }
             }
         }
     }
