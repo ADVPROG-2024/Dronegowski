@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crossbeam_channel::{Receiver, Sender};
 use dronegowski::MyDrone;
 use wg_2024::drone::Drone;
+use wg_2024::network::NodeId;
 use wg_2024::{
     controller::{DroneCommand, DroneEvent},
     packet::Packet,

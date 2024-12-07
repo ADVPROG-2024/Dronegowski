@@ -7,7 +7,7 @@ use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet::{FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum DroneState {
     Active,
     Crashing,
@@ -22,14 +22,9 @@ pub struct MyDrone {
     pub packet_recv: Receiver<Packet>,           // Canale per ricevere pacchetti
     pub packet_send: HashMap<NodeId, Sender<Packet>>, // Mappa dei canali per inviare pacchetti ai neighbours nodes
     pub pdr: f32,                                     // PDR
-    pub state: DroneState,                            // Stato del drone
+    state: DroneState,                                // Stato del drone
     pub flood_id_vec: HashSet<(u64, u64)>, // HashSet degli id delle FloodRequest ricevute
-}
-
-impl PartialEq for DroneState {
-    fn eq(&self, other: &Self) -> bool {
-        todo!()
-    }
+                                           // drone_options: HashMap<DroneOption, bool>
 }
 
 impl Drone for MyDrone {
@@ -48,7 +43,7 @@ impl Drone for MyDrone {
         );
         assert!(!(pdr > 1.0 || pdr < 0.0), "pdr out of bounds");
 
-        println!("Drone {} creato con PDR: {}", id, pdr);
+        format!("Drone {id} creato con PDR: {pdr}");
 
         Self {
             id,
@@ -68,8 +63,8 @@ impl Drone for MyDrone {
                 recv(self.packet_recv) -> packet_res => {
                     if let Ok(mut packet) = packet_res {
                         if self.state == DroneState::Crashing {
-                                    self.state = DroneState::Crashed;
-                                    break;
+                            self.state = DroneState::Crashed;
+                            break; // Forse bisogna farlo in un altro modo controllare!
                         }
                         match packet.pack_type {
                             PacketType::FloodRequest(ref mut flood_request) => {
@@ -127,12 +122,7 @@ impl Drone for MyDrone {
                                             },
                                             PacketType::MsgFragment(ref fragment) => {
                                                 if self.state == DroneState::Crashed {
-                                                    self.handle_forwarding_error(
-                                                        &packet,
-                                                        NackType::ErrorInRouting(
-                                                            *packet.routing_header.hops.get(packet.routing_header.hop_index + 1).unwrap(),
-                                                        ),
-                                                    );
+                                                    self.handle_forwarding_error(&packet, NackType::ErrorInRouting(*packet.routing_header.hops.get(packet.routing_header.hop_index+1).unwrap()));
                                                 } else if self.should_drop_packet() {
                                                     self.handle_forwarding_error(&packet, NackType::Dropped);
                                                 } else if let Err(nack) = self.forward_packet(packet.clone()) {
@@ -157,6 +147,7 @@ impl Drone for MyDrone {
                                 self.set_pdr(pdr).expect("Error in PDR setting");
                             },
                             DroneCommand::Crash => {
+                                println!("Settato lo stato in crashing");
                                 self.set_drone_state(DroneState::Crashing);
                                 // Setta lo stato in crashing limitando le funzionalità del drone
                             },
@@ -164,6 +155,7 @@ impl Drone for MyDrone {
                                 self.add_neighbor(node_id, sender).expect("Sender already present!");
                             },
                             DroneCommand::RemoveSender(node_id) => {
+                                println!("Rimosso sender!");
                                 self.remove_neighbor(&node_id).expect("Sender is not in self.sender");
                             }
                         }
@@ -171,6 +163,7 @@ impl Drone for MyDrone {
                 }
             }
         }
+        println!("Drone {} ha terminato l'esecuzione", self.id);
     }
 }
 
@@ -254,7 +247,7 @@ impl MyDrone {
         false
     }
 
-    fn packet_nack(&self, packet: Packet, nack: Nack) -> Packet {
+    fn packet_nack(&self, packet: &Packet, nack: Nack) -> Packet {
         // path fino al source node
         let rev_path = packet
             .routing_header
@@ -279,17 +272,17 @@ impl MyDrone {
 
     pub fn remove_neighbor(&mut self, node_id: &NodeId) -> Result<(), String> {
         if self.packet_send.contains_key(node_id) {
-            Err(format!(
-                "Sender per il nodo {node_id} è già presente nella mappa!"
-            ))
-        } else {
             self.packet_send.remove(node_id);
             Ok(())
+        } else {
+            Err(format!(
+                "Sender per il nodo {node_id} non è presente nella mappa!"
+            ))
         }
     }
 
     fn handle_forwarding_error(&self, packet: &Packet, nack_type: NackType) {
-        // Se il pacchetto è un nack/send/floodResponse viene mandato al sim controller, altrimenti viene creato il nack_packet
+        // Se il pacchetto è un nack/send/floodResponse viene mandato al sim controller, altrimenti viene creato il nack_packet e viene mandato
 
         match packet.pack_type {
             PacketType::Ack(_) | PacketType::Nack(_) | PacketType::FloodResponse(_) => {
@@ -299,7 +292,7 @@ impl MyDrone {
             }
             _ => {
                 let nack_packet = self.packet_nack(
-                    packet.clone(),
+                    packet,
                     Nack {
                         fragment_index: 0, // oppure il valore appropriato
                         nack_type,
