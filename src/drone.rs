@@ -77,6 +77,7 @@ impl Drone for MyDrone {
             match self.state {
                 DroneState::Active => {
                     select_biased! {
+                        // Priorità al simulation controller
                         recv(self.sim_controller_recv) -> command_res => {
                             if let Ok(command) = command_res {
                                 self.handle_command(command);
