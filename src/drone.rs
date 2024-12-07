@@ -95,7 +95,8 @@ impl Drone for MyDrone {
                                             else{
                                                 for neighbour in self.packet_send.clone(){
                                                     if neighbour.0 != previous_id.unwrap().0{
-                                                        self.forward_packet_safe(&packet);
+                                                        self.forward_packet_flood_request(packet.clone(), neighbour.clone());
+                                                        println!("Drone {} correctly send the Flood Request to neighbor with {} id", self.id, neighbour.0);
                                                     }
                                                 }
                                             }
@@ -180,6 +181,11 @@ impl MyDrone {
                 nack_type: NackType::DestinationIsDrone,
             }),
         }
+    }
+
+    pub fn forward_packet_flood_request(&self, packet: Packet, neighbour: (NodeId, Sender<Packet>) ){
+        println!("Sender di Drone {} -> {:?}", self.id, neighbour.0);
+        neighbour.1.send(packet).expect("C'è un problema");
     }
 
     pub fn set_pdr(&mut self, pdr: f32) -> Result<(), String> {
