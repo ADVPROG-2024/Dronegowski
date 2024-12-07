@@ -10,7 +10,6 @@ use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
 use wg_2024::packet::{Ack, Nack, NackType, Packet, PacketType};
 
-
 #[test]
 #[should_panic(expected = "pdr out of bounds")]
 fn pdr_too_big() {
