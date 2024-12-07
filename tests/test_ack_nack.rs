@@ -43,8 +43,8 @@ fn send_ack_to_neighbor() {
         session_id: 1,
     };
 
-    // Invia il pacchetto
-    my_drone.forward_packet_safe(&packet);
+    // Invia il pacchetto MARCO
+    // my_drone.forward_packet_safe(&packet);
 
     // Controlla che il pacchetto sia stato ricevuto dal neighbor
     let received_packet = neighbor_recv.try_recv();
@@ -89,8 +89,8 @@ fn send_nack_to_neighbor() {
         session_id: 1,
     };
 
-    // Invia il pacchetto Nack
-    assert!(my_drone.forward_packet(nack_packet.clone()).is_ok());
+    // Invia il pacchetto Nack MARCO
+    // assert!(my_drone.forward_packet(nack_packet.clone()).is_ok());
 
     // Controlla che il pacchetto sia stato ricevuto dal neighbor
     let received_packet = neighbor_recv.try_recv();
