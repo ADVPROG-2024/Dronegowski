@@ -3,6 +3,7 @@ mod common;
 use dronegowski::MyDrone;
 use std::collections::{HashMap, HashSet};
 use crossbeam_channel;
+use crossbeam_channel::RecvError;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{SourceRoutingHeader};
@@ -74,6 +75,14 @@ fn test_flood_request_handling() {
             println!("Packet successfully received by the node {:?}", received_packet.pack_type);
         }
         Err(_) => println!("Timeout: No packet received."),
+    }
+    match sim_controller_recv.recv() {
+        Ok(DroneEvent::PacketSent(received_packet)) => {
+            assert_eq!(packet_test.clone(), received_packet.clone());
+            println!("Packet successfully received by the node {:?}", received_packet.pack_type);
+        }
+        Err(_) => println!("Timeout: No packet received."),
+        _ => {}
     }
 }
 
