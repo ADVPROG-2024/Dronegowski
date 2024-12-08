@@ -28,7 +28,7 @@ jobs:
       run: cargo test --test test_flooding --verbose
     - name: Run specific tests - test_sc_command
       run: cargo test --test test_sc_command --verbose
-    - name: Run specific tests - test_inizialization
-      run: cargo test --test test_inizialization --verbose
+    - name: Run specific tests - test_initialization
+      run: cargo test --test test_initialization --verbose
 
     
