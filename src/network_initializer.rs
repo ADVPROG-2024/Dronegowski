@@ -10,11 +10,11 @@ use wg_2024::drone::Drone;
 use wg_2024::network::NodeId;
 use wg_2024::packet::Packet;
 
-/// Parsing del file di configurazione TOML.
+/// Parsing file  config.toml
 pub fn parse_config(file: &str) -> Config {
-    let file_str = fs::read_to_string(file).expect("Impossibile leggere il file di configurazione");
-    println!("Parsing del file di configurazione...");
-    toml::from_str(&file_str).expect("Errore durante il parsing del file TOML")
+    let file_str = fs::read_to_string(file).expect("error reading config file");
+    println!("Parsing configuration file...");
+    toml::from_str(&file_str).expect("Error occurred during config file parsing")
 }
 
 #[test]
@@ -70,28 +70,28 @@ fn test_initialization() {
         }));
     }
 
-    // Simula un breve tempo di esecuzione
+    // pretend a short execution time
     std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // Invia aggiornamento del PDR a tutti i droni
+    // sending pdr update to all drones
     for sender in controller_drones.values() {
         sender
             .send(DroneCommand::SetPacketDropRate(0.3))
-            .expect("Errore nella modifica del PDR!");
+            .expect("Error occurred during PDR setting!");
     }
 
-    // Invia il comando di terminazione a tutti i droni
+    // sending crash command to all drones
     for sender in controller_drones.values() {
         sender
             .send(DroneCommand::Crash)
-            .expect("Errore nell'invio del comando di terminazione");
+            .expect("Error occurred sending crash command");
     }
 
-    // Aspetta che tutti i thread dei droni terminino
+    // wait all the drone threads
     while let Some(handle) = handles.pop() {
         handle
             .join()
-            .expect("Errore durante la terminazione di un drone");
+            .expect("Error occured while exiting a drone");
     }
 }
 
@@ -101,17 +101,17 @@ pub enum ValidationError {
     NotBidirectional(NodeId, NodeId),
     #[error("The graph is not connected.")]
     NotConnected,
-    // Altri errori possono essere aggiunti qui.
+    // Other errors needed can be added here.
 }
 
 pub fn validate_config(config: &Config) -> Result<(), ValidationError> {
     let mut graph: HashMap<NodeId, HashSet<NodeId>> = HashMap::new();
 
-    // Costruisce il grafo.
+    // building the graph
     for drone in &config.drone {
         for &connected_id in &drone.connected_node_ids {
             graph.entry(drone.id).or_default().insert(connected_id);
-            graph.entry(connected_id).or_default(); // Assicura che il nodo connesso sia nel grafo.
+            graph.entry(connected_id).or_default(); // insert the neighbour node in the graph if not there
         }
     }
     for client in &config.client {
@@ -127,10 +127,10 @@ pub fn validate_config(config: &Config) -> Result<(), ValidationError> {
         }
     }
 
-    // Verifica la bidirezionalità.
+    // bidirectional links checking
     for (&node, connections) in &graph {
         for &connected_node in connections {
-            //controllo della presenza del collegamento opposto
+            //checking of the opposite link
             if !graph
                 .get(&connected_node)
                 .map_or(false, |set| set.contains(&node))
@@ -140,10 +140,10 @@ pub fn validate_config(config: &Config) -> Result<(), ValidationError> {
         }
     }
 
-    // Verifica la connettività del grafo.
+    // connected graph checking
     let all_nodes: HashSet<_> = graph.keys().copied().collect();
     let mut visited = HashSet::new();
-    // Prende un nodo qualsiasi come punto di partenza.
+    // takes any node as starting point
     let start_node = *all_nodes.iter().next().unwrap();
 
     dfs(start_node, &graph, &mut visited);
@@ -155,7 +155,7 @@ pub fn validate_config(config: &Config) -> Result<(), ValidationError> {
     Ok(())
 }
 
-// Funzione DFS per verificare la connettività.
+// DFS function used in the connected graph checking
 fn dfs(node: NodeId, graph: &HashMap<NodeId, HashSet<NodeId>>, visited: &mut HashSet<NodeId>) {
     if visited.contains(&node) {
         return;
