@@ -90,7 +90,7 @@ fn send_nack_to_neighbor() {
         controller_receive,
         packet_receive.clone(),
         senders,
-        0.1, // PDR valido
+        0.1, // PDR valid
     );
 
     my_drone.set_debug_option_active(&DroneDebugOption::Ack);
