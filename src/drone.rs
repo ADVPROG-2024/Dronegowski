@@ -357,7 +357,8 @@ impl Dronegowski {
                                 Ok(())
                             }
                             Err(..) => {
-                                panic!("Error occurred while forwarding the packet")
+                                panic!("Error occurred while forwarding the packet");
+                            }
                         }
                     },
                     // None if the next hop is not a drone's neighbour
