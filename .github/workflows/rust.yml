@@ -18,5 +18,9 @@ jobs:
     - uses: actions/checkout@v4
     - name: Build
       run: cargo build --verbose
-    - name: Run specific tests
+    - name: Run specific tests - test_drone
       run: cargo test --test test_drone --verbose
+    - name: Run specific tests - test_forwarding
+      run: cargo test --test test_forwarding --verbose
+
+    
