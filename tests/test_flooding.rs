@@ -1,29 +1,28 @@
 mod common;
 
-use dronegowski::MyDrone;
-use std::collections::{HashMap, HashSet};
+use dronegowski::Dronegowski;
+use std::collections::{HashMap};
 use crossbeam_channel;
-use crossbeam_channel::RecvError;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{SourceRoutingHeader};
-use wg_2024::packet::{FloodRequest, Packet, PacketType, NodeType, FloodResponse, Ack, Nack, NackType};
+use wg_2024::packet::{FloodRequest, Packet, PacketType, NodeType, FloodResponse};
 
 #[test]
 fn test_flood_request_handling() {
-    // Creazione dei canali
+    // creation of channels
     let (sender1, receiver1) = crossbeam_channel::unbounded::<Packet>();
 
     let (sim_controller_send, sim_controller_recv) = crossbeam_channel::unbounded::<DroneEvent>();
-    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
 
-    // Mapping dei neighbour ai canali
+    // Mapping of neighbours to channels
     let mut senders = HashMap::new();
     senders.insert(2, sender1); // Drone 2 neighbour
 
-    // Creazione del drone con configurazione dei canali
-    let mut my_drone = MyDrone::new(
+    // creation of drone with channels configuration
+    let mut my_drone = Dronegowski::new(
         1,
         sim_controller_send,
         controller_receive,
@@ -32,8 +31,8 @@ fn test_flood_request_handling() {
         0.0
     );
 
-    // Creazione del pacchetto FloodRequest da inviare al drone
-    let mut packet = Packet {
+    // creation of FloodRequest packet to forward do drone
+    let packet = Packet {
         pack_type: PacketType::FloodRequest(FloodRequest {
             flood_id: 123,
             initiator_id: 0,
@@ -52,7 +51,7 @@ fn test_flood_request_handling() {
         my_drone.run();
     });
 
-    //Invio il pacchetto al mio drone
+    //Forward packet to my drone
     packet_send.send(packet.clone()).expect("Error sending the flood request...");
 
     let packet_test = Packet {
@@ -68,7 +67,7 @@ fn test_flood_request_handling() {
         session_id: 1,
     };
 
-    //Verifica che il pacchetto venga ricevuto correttamente dai vicini
+    //Verify packet letting received correctly from neighbors
     match receiver1.recv() {
         Ok(received_packet) => {
             assert_eq!(packet_test.clone(), received_packet.clone());
@@ -89,17 +88,17 @@ fn test_flood_request_handling() {
 #[test]
 fn test_flood_request_no_neighbour(){
     let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
-    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send_my_drone, packet_receive_my_drone) = crossbeam_channel::unbounded::<Packet>();
     let (packet_send_test_drone, packet_receive_test_drone) = crossbeam_channel::unbounded::<Packet>();
 
-    // Mapping dei neighbour ai canali
+    // Mapping of neighbour at channels
     let mut senders_test_drone = HashMap::new();
     senders_test_drone.insert(1, packet_send_my_drone.clone());
     let mut senders_my_drone = HashMap::new();
     senders_my_drone.insert(0, packet_send_test_drone.clone());
 
-    let _ = MyDrone::new(
+    let _ = Dronegowski::new(
         0,
         sim_controller_send.clone(),
         controller_receive.clone(),
@@ -108,8 +107,8 @@ fn test_flood_request_no_neighbour(){
         0.0
     );
 
-    // Creazione del drone con configurazione dei canali
-    let mut my_drone = MyDrone::new(
+    // creation of drone with configuration of channels
+    let mut my_drone = Dronegowski::new(
         1,
         sim_controller_send,
         controller_receive,
@@ -118,8 +117,8 @@ fn test_flood_request_no_neighbour(){
         0.0
     );
 
-    // Creazione del pacchetto FloodRequest da inviare al drone
-    let mut packet = Packet {
+    // creation of FloodRequest packet to forward to the drone
+    let packet = Packet {
         pack_type: PacketType::FloodRequest(FloodRequest {
             flood_id: 123,
             initiator_id: 0,
@@ -150,7 +149,7 @@ fn test_flood_request_no_neighbour(){
         session_id: 1,
     };
 
-    //Invio il pacchetto al mio drone
+    //Forward packet to my drone
     packet_send_my_drone.send(packet.clone()).expect("Error sending the flood request...");
 
     match packet_receive_test_drone.recv() {
@@ -167,18 +166,18 @@ fn test_flood_request_already_received(){
     let (sender1, receiver1) = crossbeam_channel::unbounded::<Packet>();
 
     let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
-    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send_my_drone, packet_receive_my_drone) = crossbeam_channel::unbounded::<Packet>();
     let (packet_send_test_drone, packet_receive_test_drone) = crossbeam_channel::unbounded::<Packet>();
 
-    // Mapping dei neighbour ai canali
+    // Mapping of neighbour to channels
     let mut senders_test_drone = HashMap::new();
     senders_test_drone.insert(1, packet_send_my_drone.clone());
     let mut senders_my_drone = HashMap::new();
     senders_my_drone.insert(0, packet_send_test_drone.clone());
     senders_my_drone.insert(2, sender1);
 
-    let _ = MyDrone::new(
+    let _ = Dronegowski::new(
         0,
         sim_controller_send.clone(),
         controller_receive.clone(),
@@ -187,8 +186,8 @@ fn test_flood_request_already_received(){
         0.0
     );
 
-    // Creazione del drone con configurazione dei canali
-    let mut my_drone = MyDrone::new(
+    // creation of drone with configuration of channels
+    let mut my_drone = Dronegowski::new(
         1,
         sim_controller_send,
         controller_receive,
@@ -197,8 +196,8 @@ fn test_flood_request_already_received(){
         0.0
     );
 
-    // Creazione del pacchetto FloodRequest da inviare al drone
-    let mut packet = Packet {
+    // creation of FloodRequest packet to forward to the drone
+    let packet = Packet {
         pack_type: PacketType::FloodRequest(FloodRequest {
             flood_id: 123,
             initiator_id: 0,
@@ -217,7 +216,7 @@ fn test_flood_request_already_received(){
         my_drone.run();
     });
 
-    //Invio il pacchetto al mio drone
+    //Forward packet to my drone
     packet_send_my_drone.send(packet.clone()).expect("Error sending the flood request...");
 
     let packet_test1 = Packet {
@@ -268,30 +267,30 @@ fn test_flood_request_already_received(){
 #[test]
 fn send_flood_response_to_neighbor() {
     let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
-    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
 
-    // Creazione del canale per il neighbor
+    // creation channel for neighbor
     let (neighbor_send, neighbor_recv) = crossbeam_channel::unbounded::<Packet>();
 
-    // Crea una mappa per i neighbors
+    // create map for neighbors
     let mut senders = HashMap::new();
-    senders.insert(2, neighbor_send); // Drone 2 come neighbor
+    senders.insert(2, neighbor_send); // Drone 2 like neighbor
 
-    let mut my_drone = MyDrone::new(
+    let mut my_drone = Dronegowski::new(
         1,
         sim_controller_send,
         controller_receive,
         packet_receive.clone(),
         senders,
-        0.1,            // PDR valido
+        0.1,            // valid PDR
     );
 
     let packet = Packet {
         pack_type: PacketType::FloodResponse(FloodResponse { flood_id: 0, path_trace: vec![(2, NodeType::Client), (1, NodeType::Drone), (0, NodeType::Drone)] }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![0, 1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -307,7 +306,7 @@ fn send_flood_response_to_neighbor() {
         pack_type: PacketType::FloodResponse(FloodResponse { flood_id: 0, path_trace: vec![(2, NodeType::Client), (1, NodeType::Drone), (0, NodeType::Drone)] }),
         routing_header: SourceRoutingHeader {
             hop_index: 2,
-            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![0, 1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -324,23 +323,23 @@ fn send_flood_response_to_neighbor() {
 #[test]
 fn forward_flood_response_no_neighbor() {
     let (sim_controller_send, sim_controller_recv) = crossbeam_channel::unbounded::<DroneEvent>();
-    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
 
-    let mut my_drone = MyDrone::new(
+    let mut my_drone = Dronegowski::new(
         1,
         sim_controller_send,
         controller_receive,
         packet_receive.clone(),
-        HashMap::new(), // Nessun neighbor
-        0.1,            // PDR valido
+        HashMap::new(), // no neighbor
+        0.1,            // valid PDR
     );
 
     let packet = Packet {
         pack_type: PacketType::FloodResponse(FloodResponse { flood_id: 0, path_trace: vec![(2, NodeType::Client), (1, NodeType::Drone), (0, NodeType::Drone)] }),
         routing_header: SourceRoutingHeader {
             hop_index: 0,
-            hops: vec![1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
