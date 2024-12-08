@@ -257,7 +257,7 @@ impl MyDrone {
                                         );
                                         }
                                     }
-                                    _ => todo!(), // Debug feature to be finished
+                                    _ => {} // Debug feature to be finished
                                 }
                                 self.forward_packet_safe(&packet);
                             }
@@ -384,7 +384,7 @@ impl MyDrone {
                             );
                         }
                     }
-                    _ => todo!(), // Debug to be finished
+                    _ => {} // Debug to be finished
                 }
                 self.sim_controller_send
                     .send(DroneEvent::ControllerShortcut(packet.clone()));
