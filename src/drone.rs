@@ -1,12 +1,12 @@
-use crossbeam_channel::{select_biased, Receiver, Sender};
+use crossbeam_channel::{select, select_biased, Receiver, Sender};
 use rand::Rng;
 use std::cmp::PartialEq;
 use std::collections::{HashMap, HashSet};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
-
+use wg_2024::packet;
+use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
 mod components_drone;
 #[derive(Clone, Debug, PartialEq)]
 pub enum DroneState {
@@ -25,19 +25,19 @@ pub enum DroneDebugOption {
 }
 
 #[derive(Debug, Clone)]
-pub struct Dronegowski {
+pub struct MyDrone {
     id: NodeId,
-    sim_controller_send: Sender<DroneEvent>,                // Channel used to send commands to the SC
-    sim_controller_recv: Receiver<DroneCommand>,            // Channel used to receive commands from the SC
-    packet_recv: Receiver<Packet>,                          // Channel used to receive packets from nodes
-    packet_send: HashMap<NodeId, Sender<Packet>>,           // Map containing the sending channels of neighbour nodes
-    pdr: f32,                                               // PDR
-    state: DroneState,                                      // Drone state
-    flood_id_vec: HashSet<(u64, u64)>,                      // HashSet storing ids of already received flood_id
-    drone_debug_options: HashMap<DroneDebugOption, bool>,   // Map used to know which Debug options are active and which aren't
+    sim_controller_send: Sender<DroneEvent>, // Channel used to send commands to the SC
+    sim_controller_recv: Receiver<DroneCommand>, // Channel used to receive commands from the SC
+    packet_recv: Receiver<Packet>,           // Channel used to receive packets from nodes
+    packet_send: HashMap<NodeId, Sender<Packet>>, // Map containing the sending channels of neighbour nodes
+    pdr: f32,                                     // PDR
+    state: DroneState,                            // Drone state
+    flood_id_vec: HashSet<(u64, u64)>, // HashSet storing ids of already received flood_id
+    drone_debug_options: HashMap<DroneDebugOption, bool>, // Map used to know which Debug options are active and which aren't
 }
 
-impl Drone for Dronegowski {
+impl Drone for MyDrone {
     fn new(
         id: NodeId,
         controller_send: Sender<DroneEvent>,
@@ -78,8 +78,9 @@ impl Drone for Dronegowski {
             match self.state {
                 DroneState::Active => {
                     select_biased! {
-                        recv(self.sim_controller_recv) -> command_res => {
-                            if let Ok(command) = command_res {
+                        // Usa try_recv per evitare il blocco
+                        default => {
+                            if let Ok(command) = self.sim_controller_recv.try_recv() {
                                 self.handle_command(command);
                             }
                         },
@@ -88,7 +89,6 @@ impl Drone for Dronegowski {
                                 self.handle_packet(packet);
                             }
                         }
-
                     }
                 }
                 DroneState::Crashing => {
@@ -98,9 +98,11 @@ impl Drone for Dronegowski {
                             self.handle_packet(packet);
                         }
                         Err(_) => {
-                            println!("Drone {} has completed crashing. Transitioning to Crashed state.", self.id);
-                            self.state = DroneState::Crashed;
-                            break;
+                            if self.packet_send.is_empty() {
+                                println!("Drone {} has completed crashing. Transitioning to Crashed state.", self.id);
+                                self.state = DroneState::Crashed;
+                                break;
+                            }
                         }
                     }
                 }
@@ -127,9 +129,7 @@ impl DroneDebugOption {
     }
 }
 
-impl Dronegowski {
-
-    pub fn get_pdr(self) -> f32 {self.pdr}
+impl MyDrone {
     #[must_use]
     pub fn get_sim_controller_recv(self) -> Receiver<DroneCommand> {
         self.sim_controller_recv
@@ -150,18 +150,14 @@ impl Dronegowski {
         self.packet_send
     }
 
-    pub fn set_pdr(&mut self, pdr: f32){
-        if pdr < 0.0 {
-            panic!("pdr {} is out of bounds because is negative", pdr);
-        }
-        else if pdr > 1.0{
-            panic!("pdr {} is out of bounds because is too big", pdr);
-        }
-        else {
+    pub fn set_pdr(&mut self, pdr: f32) -> Result<(), String> {
+        if pdr > 0.0 && pdr < 1.0 {
+            println!("Drone {}: updated PDR, {} -> {}", self.id, self.pdr, pdr);
             self.pdr = pdr;
-            println!("Drone {}: PDR aggiornato a {}", self.id, pdr);
-
+            return Ok(());
         }
+
+        Err("Incorrect value of PDR".to_string())
     }
 
     pub fn get_id(self) -> NodeId {
@@ -171,7 +167,6 @@ impl Dronegowski {
     pub fn get_state(self) -> DroneState {
         self.state
     }
-
 
     fn handle_packet(&mut self, mut packet: Packet) {
         match packet.pack_type {
@@ -238,19 +233,31 @@ impl Dronegowski {
                     self.forward_packet_safe(&flood_response);
                     println!("Drone {} correctly sent back a Flood Response because has already received this flood request",self.id);
                 }
-            },
+            }
             _ => {
                 if let Some(node_id) = packet
                     .routing_header
                     .hops
-                    .get(packet.routing_header.hop_index) {
+                    .get(packet.routing_header.hop_index)
+                {
                     if *node_id == self.id {
                         match packet.pack_type {
                             PacketType::Ack(_)
                             | PacketType::Nack(_)
                             | PacketType::FloodResponse(_) => {
-                                if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
-                                    println!("[Drone {}] attempts to send Ack", self.id)
+                                match packet.pack_type {
+                                    PacketType::Ack(_) => {
+                                        if self
+                                            .clone()
+                                            .in_drone_debug_options(DroneDebugOption::Ack)
+                                        {
+                                            println!(
+                                            "[Drone {} - Ack Debug] Ack received and now trying to forward it",
+                                            self.id
+                                        );
+                                        }
+                                    }
+                                    _ => {} // Debug feature to be finished
                                 }
                                 self.forward_packet_safe(&packet);
                             }
@@ -277,7 +284,10 @@ impl Dronegowski {
                             _ => (),
                         }
                     } else {
-                        self.handle_forwarding_error(&packet, NackType::UnexpectedRecipient(self.id));
+                        self.handle_forwarding_error(
+                            &packet,
+                            NackType::UnexpectedRecipient(self.id),
+                        );
                     }
                 }
             }
@@ -287,22 +297,23 @@ impl Dronegowski {
     fn handle_command(&mut self, command: DroneCommand) {
         match command {
             DroneCommand::SetPacketDropRate(pdr) => {
-                self.set_pdr(pdr);
+                self.set_pdr(pdr).expect("Error in PDR setting");
             }
             DroneCommand::Crash => {
                 println!("Drone {} entering Crashing state.", self.id);
                 self.set_drone_state(DroneState::Crashing);
             }
             DroneCommand::AddSender(node_id, sender) => {
-                self.add_neighbor(node_id, sender);
+                self.add_neighbor(node_id, sender)
+                    .expect("Sender already present!");
             }
             DroneCommand::RemoveSender(node_id) => {
                 println!("Drone {} removing sender {}.", self.id, node_id);
                 self.remove_neighbor(&node_id)
+                    .expect("Sender is not in self.sender");
             }
         }
     }
-
 
     // Method used to send packet to the next hop
     fn forward_packet(&self, mut packet: Packet) -> Result<(), Nack> {
@@ -324,24 +335,27 @@ impl Dronegowski {
         match next_hop {
             Some(next_node) => {
                 match self.packet_send.get(next_node) {
-                    Some(next_node_channel) => {
-                        if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
-                            println!(
-                                "[Drone {} - Ack Debug] Ack sent correctly to Node {}",
-                                self.id, next_node
-                            );
-                        }
-                        match next_node_channel.send(packet.clone()) {
-                            Ok(()) => {
-                                self.sim_controller_send
-                                    .send(DroneEvent::PacketSent(packet.clone()));
-                                Ok(())
+                    Some(next_node_channel) => match next_node_channel.send(packet.clone()) {
+                        Ok(()) => {
+                            match packet.pack_type {
+                                PacketType::Ack(_) => {
+                                    if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
+                                        println!(
+                                            "[Drone {} - Ack Debug] Ack sended to {}",
+                                            self.id, next_node
+                                        );
+                                    }
+                                }
+                                _ => {}
                             }
-                            Err(..) => {
-                                panic!("Error occurred while forwarding the packet")
-                            }
+                            self.sim_controller_send
+                                .send(DroneEvent::PacketSent(packet.clone()));
+                            Ok(())
                         }
-                    }
+                        Err(..) => {
+                            panic!("Errore nell'invio del pacchetto al nodo successivo")
+                        }
+                    },
                     // None if the next hop is not a drone's neighbour
                     None => Err(Nack {
                         fragment_index,
@@ -357,16 +371,20 @@ impl Dronegowski {
         }
     }
 
-
     fn handle_forwarding_error(&self, packet: &Packet, nack_type: NackType) {
         // if the packet is a nack/send/floodResponse it's sent to the sim controller, otherwise a nack_packet is created and sent
         match packet.pack_type {
             PacketType::Ack(_) | PacketType::Nack(_) | PacketType::FloodResponse(_) => {
-                if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
-                    println!(
-                        "[Drone {} - Ack Debug] Ack Packet Dropped sent to Simulation Controller",
-                        self.id
-                    );
+                match packet.pack_type {
+                    PacketType::Ack(_) => {
+                        if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
+                            println!(
+                                "[Drone {} - Ack Debug] Ack sended to Simulation Controller after error",
+                                self.id
+                            );
+                        }
+                    }
+                    _ => {} // Debug to be finished
                 }
                 self.sim_controller_send
                     .send(DroneEvent::ControllerShortcut(packet.clone()));
@@ -408,12 +426,14 @@ impl Dronegowski {
         }
     }
 
-    fn add_neighbor(&mut self, node_id: NodeId, sender: Sender<Packet>){
+    fn add_neighbor(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
         if let std::collections::hash_map::Entry::Vacant(e) = self.packet_send.entry(node_id) {
             e.insert(sender);
-        }
-        else {
-            panic!("Sender for node {node_id} already stored in the map!");
+            Ok(())
+        } else {
+            Err(format!(
+                "Sender for node {node_id} already stored in the map!",
+            ))
         }
     }
 
@@ -437,11 +457,9 @@ impl Dronegowski {
     pub fn set_debug_option_active(&mut self, debug_option: &DroneDebugOption) {
         if let Some(option) = self.drone_debug_options.get_mut(&debug_option) {
             *option = true;
-            println!("Debug: {:?} Enabled", debug_option);
+            println!("[Debug: {:?} Enabled]", debug_option);
         } else {
-            eprintln!(
-                "Error: Debug option {debug_option:?} doesn't exist."
-            );
+            eprintln!("Error: Debug option {debug_option:?} doesn't exist.");
         }
     }
 
@@ -449,9 +467,7 @@ impl Dronegowski {
         if let Some(option) = self.drone_debug_options.get_mut(&debug_option) {
             *option = false;
         } else {
-            eprintln!(
-                "Error: Debug option {debug_option:?} doesn't exist.",
-            );
+            eprintln!("Error: Debug option {debug_option:?} doesn't exist.",);
         }
     }
 
@@ -460,7 +476,7 @@ impl Dronegowski {
         let rev_path = packet
             .routing_header
             .hops
-            .split_at(packet.routing_header.hop_index+1)
+            .split_at(packet.routing_header.hop_index + 1)
             .0
             .iter()
             .rev()
@@ -478,14 +494,12 @@ impl Dronegowski {
         }
     }
 
-    fn remove_neighbor(&mut self, node_id: &NodeId){
+    fn remove_neighbor(&mut self, node_id: &NodeId) -> Result<(), String> {
         if self.packet_send.contains_key(node_id) {
             self.packet_send.remove(node_id);
-        }
-        else {
-            panic!("the {} is not neighbour of the drone {}", node_id, self.id);
+            Ok(())
+        } else {
+            Err(format!("Sender for node {node_id} not stored in the map!"))
         }
     }
 }
-
-
