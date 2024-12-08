@@ -1,16 +1,14 @@
 use std::collections::HashMap;
-
 use crossbeam_channel::{Receiver, Sender};
-use dronegowski::MyDrone;
+use dronegowski::Dronegowski;
 use wg_2024::drone::Drone;
-use wg_2024::network::NodeId;
 use wg_2024::{
     controller::{DroneCommand, DroneEvent},
     packet::Packet,
 };
 
 pub fn default_drone() -> (
-    MyDrone,
+    Dronegowski,
     Receiver<DroneEvent>,
     Sender<DroneCommand>,
     Sender<Packet>,
@@ -19,7 +17,7 @@ pub fn default_drone() -> (
     let (command_send, command_recv) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send, packet_recv) = crossbeam_channel::unbounded::<Packet>();
 
-    let mut drone = MyDrone::new(
+    let drone = Dronegowski::new(
         0,
         sim_controller_send,
         command_recv,

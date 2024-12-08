@@ -1,25 +1,25 @@
-use dronegowski::MyDrone;
+use dronegowski::Dronegowski;
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
-use wg_2024::network::{NodeId, SourceRoutingHeader};
+use wg_2024::network::{SourceRoutingHeader};
 use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType};
 
 #[test]
 fn forward_msg_fragment_to_neighbours() {
     let (sim_controller_send, sim_controller_recv) = crossbeam_channel::unbounded::<DroneEvent>();
-    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
 
-    // Creazione del canale per il neighbor
+    // creation of channel for neighbors
     let (neighbor_send, neighbor_recv) = crossbeam_channel::unbounded::<Packet>();
 
-    // Crea una mappa per i neighbors
+    // create map for neighbors
     let mut senders = HashMap::new();
-    senders.insert(2, neighbor_send); // Drone 2 come neighbor
+    senders.insert(2, neighbor_send); // Drone 2 like neighbor
 
-    // Inizializza il drone
-    let mut my_drone = MyDrone::new(
+    // initialize drone
+    let mut my_drone = Dronegowski::new(
         1,
         sim_controller_send,
         controller_receive,
@@ -37,7 +37,7 @@ fn forward_msg_fragment_to_neighbours() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![0, 1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -57,7 +57,7 @@ fn forward_msg_fragment_to_neighbours() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 2,
-            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![0, 1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -84,17 +84,17 @@ fn forward_msg_fragment_to_neighbours() {
 fn forward_msg_fragment_destination_is_drone() {
 
     let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
-    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send_my_drone, packet_receive_my_drone) = crossbeam_channel::unbounded::<Packet>();
     let (packet_send_test_drone, packet_receive_test_drone) = crossbeam_channel::unbounded::<Packet>();
 
-    // Mapping dei neighbour ai canali
+    // mapping of neighbour to channels
     let mut senders_test_drone = HashMap::new();
     senders_test_drone.insert(1, packet_send_my_drone.clone());
     let mut senders_my_drone = HashMap::new();
     senders_my_drone.insert(0, packet_send_test_drone.clone());
 
-    let _ = MyDrone::new(
+    let _ = Dronegowski::new(
         0,
         sim_controller_send.clone(),
         controller_receive.clone(),
@@ -103,7 +103,7 @@ fn forward_msg_fragment_destination_is_drone() {
         0.0
     );
 
-    let mut my_drone = MyDrone::new(
+    let mut my_drone = Dronegowski::new(
         1,
         sim_controller_send,
         controller_receive,
@@ -139,7 +139,7 @@ fn forward_msg_fragment_destination_is_drone() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![1, 0], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![1, 0], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -154,28 +154,26 @@ fn forward_msg_fragment_destination_is_drone() {
 
 #[test]
 fn forward_msg_fragment_no_neighbor() {
-
     let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
-    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send_my_drone, packet_receive_my_drone) = crossbeam_channel::unbounded::<Packet>();
     let (packet_send_test_drone, packet_receive_test_drone) = crossbeam_channel::unbounded::<Packet>();
 
-    // Mapping dei neighbour ai canali
-    let mut senders_test_drone = HashMap::new();
-    senders_test_drone.insert(1, packet_send_my_drone.clone());
+    // mapping of neighbour to channels
+
     let mut senders_my_drone = HashMap::new();
     senders_my_drone.insert(0, packet_send_test_drone.clone());
 
-    let _ = MyDrone::new(
+    let _ = Dronegowski::new(
         0,
         sim_controller_send.clone(),
         controller_receive.clone(),
         packet_receive_test_drone.clone(),
-        senders_test_drone,
+        HashMap::new(),
         0.0
     );
 
-    let mut my_drone = MyDrone::new(
+    let mut my_drone = Dronegowski::new(
         1,
         sim_controller_send,
         controller_receive,
@@ -193,7 +191,7 @@ fn forward_msg_fragment_no_neighbor() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![0, 1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -211,7 +209,7 @@ fn forward_msg_fragment_no_neighbor() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![1, 0], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![1, 0], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -227,17 +225,17 @@ fn forward_msg_fragment_no_neighbor() {
 #[test]
 fn forward_msg_fragment_wrong_id() {
     let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
-    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send_my_drone, packet_receive_my_drone) = crossbeam_channel::unbounded::<Packet>();
     let (packet_send_test_drone, packet_receive_test_drone) = crossbeam_channel::unbounded::<Packet>();
 
-    // Mapping dei neighbour ai canali
+    // mapping of neighbour to channels
     let mut senders_test_drone = HashMap::new();
     senders_test_drone.insert(1, packet_send_my_drone.clone());
     let mut senders_my_drone = HashMap::new();
     senders_my_drone.insert(0, packet_send_test_drone.clone());
 
-    let _ = MyDrone::new(
+    let _ = Dronegowski::new(
         0,
         sim_controller_send.clone(),
         controller_receive.clone(),
@@ -246,7 +244,7 @@ fn forward_msg_fragment_wrong_id() {
         0.0
     );
 
-    let mut my_drone = MyDrone::new(
+    let mut my_drone = Dronegowski::new(
         1,
         sim_controller_send,
         controller_receive,
@@ -264,7 +262,7 @@ fn forward_msg_fragment_wrong_id() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![0, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![0, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -282,7 +280,7 @@ fn forward_msg_fragment_wrong_id() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![2, 0], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![2, 0], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -299,17 +297,17 @@ fn forward_msg_fragment_wrong_id() {
 #[test]
 fn forward_msg_fragment_dropped() {
     let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
-    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send_my_drone, packet_receive_my_drone) = crossbeam_channel::unbounded::<Packet>();
     let (packet_send_test_drone, packet_receive_test_drone) = crossbeam_channel::unbounded::<Packet>();
 
-    // Mapping dei neighbour ai canali
+    // mapping of neighbour to channels
     let mut senders_test_drone = HashMap::new();
     senders_test_drone.insert(1, packet_send_my_drone.clone());
     let mut senders_my_drone = HashMap::new();
     senders_my_drone.insert(0, packet_send_test_drone.clone());
 
-    let _ = MyDrone::new(
+    let _ = Dronegowski::new(
         0,
         sim_controller_send.clone(),
         controller_receive.clone(),
@@ -318,7 +316,7 @@ fn forward_msg_fragment_dropped() {
         0.0
     );
 
-    let mut my_drone = MyDrone::new(
+    let mut my_drone = Dronegowski::new(
         1,
         sim_controller_send,
         controller_receive,
@@ -336,7 +334,7 @@ fn forward_msg_fragment_dropped() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![0, 1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -354,7 +352,7 @@ fn forward_msg_fragment_dropped() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![1, 0], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+            hops: vec![1, 0], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
