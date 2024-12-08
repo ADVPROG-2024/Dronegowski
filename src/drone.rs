@@ -1,12 +1,12 @@
-use crossbeam_channel::{select, select_biased, Receiver, Sender};
+use crossbeam_channel::{select_biased, Receiver, Sender};
 use rand::Rng;
 use std::cmp::PartialEq;
 use std::collections::{HashMap, HashSet};
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet;
-use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
+use wg_2024::packet::{FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
+
 mod components_drone;
 #[derive(Clone, Debug, PartialEq)]
 pub enum DroneState {
@@ -25,7 +25,7 @@ pub enum DroneDebugOption {
 }
 
 #[derive(Debug, Clone)]
-pub struct MyDrone {
+pub struct Dronegowski {
     id: NodeId,
     sim_controller_send: Sender<DroneEvent>, // Channel used to send commands to the SC
     sim_controller_recv: Receiver<DroneCommand>, // Channel used to receive commands from the SC
@@ -37,7 +37,7 @@ pub struct MyDrone {
     drone_debug_options: HashMap<DroneDebugOption, bool>, // Map used to know which Debug options are active and which aren't
 }
 
-impl Drone for MyDrone {
+impl Drone for Dronegowski {
     fn new(
         id: NodeId,
         controller_send: Sender<DroneEvent>,
@@ -78,9 +78,8 @@ impl Drone for MyDrone {
             match self.state {
                 DroneState::Active => {
                     select_biased! {
-                        // Usa try_recv per evitare il blocco
-                        default => {
-                            if let Ok(command) = self.sim_controller_recv.try_recv() {
+                        recv(self.sim_controller_recv) -> command_res => {
+                            if let Ok(command) = command_res {
                                 self.handle_command(command);
                             }
                         },
@@ -89,6 +88,7 @@ impl Drone for MyDrone {
                                 self.handle_packet(packet);
                             }
                         }
+
                     }
                 }
                 DroneState::Crashing => {
@@ -98,11 +98,9 @@ impl Drone for MyDrone {
                             self.handle_packet(packet);
                         }
                         Err(_) => {
-                            if self.packet_send.is_empty() {
-                                println!("Drone {} has completed crashing. Transitioning to Crashed state.", self.id);
-                                self.state = DroneState::Crashed;
-                                break;
-                            }
+                            println!("Drone {} has completed crashing. Transitioning to Crashed state.", self.id);
+                            self.state = DroneState::Crashed;
+                            break;
                         }
                     }
                 }
@@ -129,7 +127,9 @@ impl DroneDebugOption {
     }
 }
 
-impl MyDrone {
+impl Dronegowski {
+
+    pub fn get_pdr(self) -> f32 {self.pdr}
     #[must_use]
     pub fn get_sim_controller_recv(self) -> Receiver<DroneCommand> {
         self.sim_controller_recv
@@ -150,14 +150,18 @@ impl MyDrone {
         self.packet_send
     }
 
-    pub fn set_pdr(&mut self, pdr: f32) -> Result<(), String> {
-        if pdr > 0.0 && pdr < 1.0 {
-            println!("Drone {}: updated PDR, {} -> {}", self.id, self.pdr, pdr);
-            self.pdr = pdr;
-            return Ok(());
+    pub fn set_pdr(&mut self, pdr: f32){
+        if pdr < 0.0 {
+            panic!("pdr {} is out of bounds because is negative", pdr);
         }
+        else if pdr > 1.0{
+            panic!("pdr {} is out of bounds because is too big", pdr);
+        }
+        else {
+            self.pdr = pdr;
+            println!("Drone {}: PDR aggiornato a {}", self.id, pdr);
 
-        Err("Incorrect value of PDR".to_string())
+        }
     }
 
     pub fn get_id(self) -> NodeId {
@@ -297,20 +301,18 @@ impl MyDrone {
     fn handle_command(&mut self, command: DroneCommand) {
         match command {
             DroneCommand::SetPacketDropRate(pdr) => {
-                self.set_pdr(pdr).expect("Error in PDR setting");
+                self.set_pdr(pdr);
             }
             DroneCommand::Crash => {
                 println!("Drone {} entering Crashing state.", self.id);
                 self.set_drone_state(DroneState::Crashing);
             }
             DroneCommand::AddSender(node_id, sender) => {
-                self.add_neighbor(node_id, sender)
-                    .expect("Sender already present!");
+                self.add_neighbor(node_id, sender);
             }
             DroneCommand::RemoveSender(node_id) => {
                 println!("Drone {} removing sender {}.", self.id, node_id);
                 self.remove_neighbor(&node_id)
-                    .expect("Sender is not in self.sender");
             }
         }
     }
@@ -335,9 +337,9 @@ impl MyDrone {
         match next_hop {
             Some(next_node) => {
                 match self.packet_send.get(next_node) {
-                    Some(next_node_channel) => match next_node_channel.send(packet.clone()) {
-                        Ok(()) => {
-                            match packet.pack_type {
+
+                    Some(next_node_channel) => {
+                        match packet.pack_type {
                                 PacketType::Ack(_) => {
                                     if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
                                         println!(
@@ -348,12 +350,15 @@ impl MyDrone {
                                 }
                                 _ => {}
                             }
-                            self.sim_controller_send
-                                .send(DroneEvent::PacketSent(packet.clone()));
-                            Ok(())
-                        }
-                        Err(..) => {
-                            panic!("Errore nell'invio del pacchetto al nodo successivo")
+                        match next_node_channel.send(packet.clone()) {
+                            Ok(()) => {
+                                self.sim_controller_send
+                                    .send(DroneEvent::PacketSent(packet.clone()));
+                                Ok(())
+                            }
+                            Err(..) => {
+                                panic!("Error occurred while forwarding the packet");
+                            }
                         }
                     },
                     // None if the next hop is not a drone's neighbour
@@ -426,14 +431,12 @@ impl MyDrone {
         }
     }
 
-    fn add_neighbor(&mut self, node_id: NodeId, sender: Sender<Packet>) -> Result<(), String> {
+    fn add_neighbor(&mut self, node_id: NodeId, sender: Sender<Packet>){
         if let std::collections::hash_map::Entry::Vacant(e) = self.packet_send.entry(node_id) {
             e.insert(sender);
-            Ok(())
-        } else {
-            Err(format!(
-                "Sender for node {node_id} already stored in the map!",
-            ))
+        }
+        else {
+            panic!("Sender for node {node_id} already stored in the map!");
         }
     }
 
@@ -494,12 +497,14 @@ impl MyDrone {
         }
     }
 
-    fn remove_neighbor(&mut self, node_id: &NodeId) -> Result<(), String> {
+    fn remove_neighbor(&mut self, node_id: &NodeId){
         if self.packet_send.contains_key(node_id) {
             self.packet_send.remove(node_id);
-            Ok(())
-        } else {
-            Err(format!("Sender for node {node_id} not stored in the map!"))
+        }
+        else {
+            panic!("the {} is not neighbour of the drone {}", node_id, self.id);
         }
     }
 }
+
+
