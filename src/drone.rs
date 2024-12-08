@@ -7,7 +7,7 @@ use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
 use wg_2024::packet;
 use wg_2024::packet::{FloodRequest, FloodResponse, Nack, NackType, NodeType, Packet, PacketType};
-
+mod components_drone;
 #[derive(Clone, Debug, PartialEq)]
 pub enum DroneState {
     Active,
@@ -162,6 +162,15 @@ impl MyDrone {
         Err("Incorrect value of PDR".to_string())
     }
 
+    pub fn get_id(self) -> NodeId {
+        self.id
+    }
+
+    pub fn get_state(self) -> DroneState {
+        self.state
+    }
+
+
     fn handle_packet(&mut self, mut packet: Packet) {
         match packet.pack_type {
             PacketType::FloodRequest(ref mut flood_request) => {
@@ -232,7 +241,7 @@ impl MyDrone {
                 if let Some(node_id) = packet
                     .routing_header
                     .hops
-                    .get(packet.routing_header.hop_index){
+                    .get(packet.routing_header.hop_index) {
                     if *node_id == self.id {
                         match packet.pack_type {
                             PacketType::Ack(_)
@@ -266,12 +275,10 @@ impl MyDrone {
                             }
                             _ => (),
                         }
+                    } else {
+                        self.handle_forwarding_error(&packet, NackType::UnexpectedRecipient(self.id));
                     }
                 }
-                else {
-                    self.handle_forwarding_error(&packet, NackType::UnexpectedRecipient(self.id));
-                }
-
             }
         }
     }
@@ -456,7 +463,7 @@ impl MyDrone {
         let rev_path = packet
             .routing_header
             .hops
-            .split_at(packet.routing_header.hop_index)
+            .split_at(packet.routing_header.hop_index+1)
             .0
             .iter()
             .rev()

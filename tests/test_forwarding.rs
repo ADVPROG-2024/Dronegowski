@@ -1,114 +1,369 @@
-use crossbeam_channel::{unbounded, Sender};
 use dronegowski::MyDrone;
 use std::collections::HashMap;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{NodeId, SourceRoutingHeader};
-use wg_2024::packet::{Fragment, NackType, Packet, PacketType};
+use wg_2024::packet::{Fragment, Nack, NackType, Packet, PacketType};
 
 #[test]
-fn packet_to_neighbours() {
-    // Creazione dei canali
-    let (controller_send, _recv_event) = unbounded();
-    let (_send_command, controller_recv) = unbounded();
-    let (_send_packet, packet_recv) = unbounded();
+fn forward_msg_fragment_to_neighbours() {
+    let (sim_controller_send, sim_controller_recv) = crossbeam_channel::unbounded::<DroneEvent>();
+    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
 
     // Creazione del canale per il neighbor
-    let (neighbor_send, neighbor_recv) = unbounded();
+    let (neighbor_send, neighbor_recv) = crossbeam_channel::unbounded::<Packet>();
 
     // Crea una mappa per i neighbors
-    let mut packet_send = HashMap::new();
-    packet_send.insert(2, neighbor_send); // Drone 2 come neighbor
+    let mut senders = HashMap::new();
+    senders.insert(2, neighbor_send); // Drone 2 come neighbor
 
     // Inizializza il drone
     let mut my_drone = MyDrone::new(
-        1, // ID del drone
-        controller_send,
-        controller_recv,
-        packet_recv,
-        packet_send,
-        0.1, // PDR
+        1,
+        sim_controller_send,
+        controller_receive,
+        packet_receive.clone(),
+        senders,
+        0.0
     );
 
-    let fragment_packet = Packet {
-        pack_type: PacketType::MsgFragment(Fragment {
-            fragment_index: 1,
-            total_n_fragments: 3,
-            length: 128,
-            data: [0; 128],
+    let packet = Packet {
+        pack_type: PacketType::MsgFragment(Fragment{
+            fragment_index: 10,
+            total_n_fragments: 15,
+            length: 5,
+            data:[5; 128],
         }),
-        routing_header: SourceRoutingHeader { hop_index: 0, hops: vec![1, 2] },
-        session_id: 0,
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
     };
 
-    // Invia il frammento
-    assert!(my_drone.forward_packet(fragment_packet.clone()).is_ok());
+    std::thread::spawn(move || {
+        my_drone.run();
+    });
 
-    // Controlla che il frammento sia stato ricevuto dal neighbor
-    let received_packet = neighbor_recv.try_recv();
-    assert!(received_packet.is_ok());
-    if let PacketType::MsgFragment(received_fragment) = received_packet.unwrap().pack_type {
-        assert_eq!(received_fragment.fragment_index, 1);
-        assert_eq!(received_fragment.total_n_fragments, 3);
-        assert_eq!(received_fragment.length, 128);
-    } else {
-        panic!("Il pacchetto ricevuto non è un frammento!");
+    packet_send.send(packet.clone()).expect("Error sending the flood request...");
+
+    let packet_test = Packet {
+        pack_type: PacketType::MsgFragment(Fragment{
+            fragment_index: 10,
+            total_n_fragments: 15,
+            length: 5,
+            data:[5; 128],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 2,
+            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
+    };
+
+    match neighbor_recv.recv() {
+        Ok(received_packet) => {
+            assert_eq!(packet_test.clone(), received_packet.clone());
+            println!("Packet successfully received by the node {:?}", received_packet.pack_type);
+        }
+        Err(_) => println!("Timeout: No packet received."),
+    }
+
+    match sim_controller_recv.recv() {
+        Ok(DroneEvent::PacketSent(received_packet)) => {
+            assert_eq!(packet_test.clone(), received_packet.clone());
+            println!("Packet {:?} successfully received by the Simulation Controller ", received_packet.pack_type);
+        }
+        Err(_) => println!("Timeout: No packet received."),
+        _ => {}
     }
 }
 
 #[test]
-fn test_next_hop_not_neighbor() {
-    use crossbeam_channel::unbounded;
+fn forward_msg_fragment_destination_is_drone() {
 
-    // Setup canali per la simulazione
-    let (event_send, _event_recv) = unbounded::<DroneEvent>();
-    let (command_send, command_recv) = unbounded::<DroneCommand>();
-    let (packet_send, packet_recv) = unbounded::<Packet>();
+    let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
+    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (packet_send_my_drone, packet_receive_my_drone) = crossbeam_channel::unbounded::<Packet>();
+    let (packet_send_test_drone, packet_receive_test_drone) = crossbeam_channel::unbounded::<Packet>();
 
-    // Nessun vicino per il drone
-    let neighbors: HashMap<NodeId, Sender<Packet>> = HashMap::new();
+    // Mapping dei neighbour ai canali
+    let mut senders_test_drone = HashMap::new();
+    senders_test_drone.insert(1, packet_send_my_drone.clone());
+    let mut senders_my_drone = HashMap::new();
+    senders_my_drone.insert(0, packet_send_test_drone.clone());
 
-    // Crea un drone senza vicini
-    let mut my_drone = MyDrone::new(
-        1,                // ID del drone
-        event_send,       // Canale eventi
-        command_recv,     // Canale comandi
-        packet_recv,      // Canale ricezione pacchetti
-        neighbors,        // Nessun neighbor
-        0.0,              // PDR
+    let _ = MyDrone::new(
+        0,
+        sim_controller_send.clone(),
+        controller_receive.clone(),
+        packet_receive_test_drone.clone(),
+        senders_test_drone,
+        0.0
     );
 
-    // Crea un pacchetto con un next_hop non valido
+    let mut my_drone = MyDrone::new(
+        1,
+        sim_controller_send,
+        controller_receive,
+        packet_receive_my_drone.clone(),
+        senders_my_drone,
+        0.0
+    );
+
     let packet = Packet {
-        pack_type: PacketType::MsgFragment(Fragment {
-            fragment_index: 1,
-            total_n_fragments: 3,
-            length: 128,
-            data: [0; 128],
-        }), // Usando un frammento come esempio
+        pack_type: PacketType::MsgFragment(Fragment{
+            fragment_index: 10,
+            total_n_fragments: 15,
+            length: 5,
+            data:[5; 128],
+        }),
         routing_header: SourceRoutingHeader {
-            hop_index: 0,
-            hops: vec![1, 2], // 2 è il next_hop non valido
+            hop_index: 1,
+            hops: vec![0, 1],
         },
         session_id: 1,
     };
-    
 
-    // Simula l'invio del pacchetto al drone
-    packet_send.send(packet.clone()).expect("Errore nell'invio del pacchetto");
+    std::thread::spawn(move || {
+        my_drone.run();
+    });
 
-    // Esegui una iterazione del loop del drone usando run_once
-    my_drone.run();
+    packet_send_my_drone.send(packet.clone()).expect("Error sending the flood request...");
 
-    // Non abbiamo accesso diretto ai pacchetti Nack, quindi usiamo eventi per verificare
-    if let DroneEvent::PacketDropped(dropped_packet) = _event_recv.try_recv().expect("Nessun evento ricevuto") {
-        if let PacketType::Nack(nack) = dropped_packet.pack_type {
-            assert_eq!(nack.nack_type, NackType::ErrorInRouting(2));
-            assert_eq!(dropped_packet.routing_header.hops, vec![1]); // Percorso inverso al mittente
-        } else {
-            panic!("Il pacchetto ricevuto non è un Nack");
+    let packet_test = Packet {
+        pack_type: PacketType::Nack(Nack{
+            fragment_index: 10,
+            nack_type: NackType::DestinationIsDrone,
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![1, 0], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
+    };
+    match packet_receive_test_drone.recv() {
+        Ok(received_packet) => {
+            assert_eq!(packet_test.clone(), received_packet.clone());
+            println!("Packet successfully received by the node {:?}", received_packet.pack_type);
         }
-    } else {
-        panic!("Non è stato generato un evento PacketDropped");
+        Err(_) => println!("Timeout: No packet received."),
+    }
+}
+
+#[test]
+fn forward_msg_fragment_no_neighbor() {
+
+    let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
+    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (packet_send_my_drone, packet_receive_my_drone) = crossbeam_channel::unbounded::<Packet>();
+    let (packet_send_test_drone, packet_receive_test_drone) = crossbeam_channel::unbounded::<Packet>();
+
+    // Mapping dei neighbour ai canali
+    let mut senders_test_drone = HashMap::new();
+    senders_test_drone.insert(1, packet_send_my_drone.clone());
+    let mut senders_my_drone = HashMap::new();
+    senders_my_drone.insert(0, packet_send_test_drone.clone());
+
+    let _ = MyDrone::new(
+        0,
+        sim_controller_send.clone(),
+        controller_receive.clone(),
+        packet_receive_test_drone.clone(),
+        senders_test_drone,
+        0.0
+    );
+
+    let mut my_drone = MyDrone::new(
+        1,
+        sim_controller_send,
+        controller_receive,
+        packet_receive_my_drone.clone(),
+        senders_my_drone,
+        0.0
+    );
+
+    let packet = Packet {
+        pack_type: PacketType::MsgFragment(Fragment{
+            fragment_index: 10,
+            total_n_fragments: 15,
+            length: 5,
+            data:[5; 128],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
+    };
+
+    std::thread::spawn(move || {
+        my_drone.run();
+    });
+
+    packet_send_my_drone.send(packet.clone()).expect("Error sending the flood request...");
+
+    let packet_test = Packet {
+        pack_type: PacketType::Nack(Nack{
+            fragment_index: 10,
+            nack_type: NackType::ErrorInRouting(2),
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![1, 0], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
+    };
+    match packet_receive_test_drone.recv() {
+        Ok(received_packet) => {
+            assert_eq!(packet_test.clone(), received_packet.clone());
+            println!("Packet successfully received by the node {:?}", received_packet.pack_type);
+        }
+        Err(_) => println!("Timeout: No packet received."),
+    }
+}
+
+#[test]
+fn forward_msg_fragment_wrong_id() {
+    let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
+    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (packet_send_my_drone, packet_receive_my_drone) = crossbeam_channel::unbounded::<Packet>();
+    let (packet_send_test_drone, packet_receive_test_drone) = crossbeam_channel::unbounded::<Packet>();
+
+    // Mapping dei neighbour ai canali
+    let mut senders_test_drone = HashMap::new();
+    senders_test_drone.insert(1, packet_send_my_drone.clone());
+    let mut senders_my_drone = HashMap::new();
+    senders_my_drone.insert(0, packet_send_test_drone.clone());
+
+    let _ = MyDrone::new(
+        0,
+        sim_controller_send.clone(),
+        controller_receive.clone(),
+        packet_receive_test_drone.clone(),
+        senders_test_drone,
+        0.0
+    );
+
+    let mut my_drone = MyDrone::new(
+        1,
+        sim_controller_send,
+        controller_receive,
+        packet_receive_my_drone.clone(),
+        senders_my_drone,
+        0.0
+    );
+
+    let packet = Packet {
+        pack_type: PacketType::MsgFragment(Fragment{
+            fragment_index: 10,
+            total_n_fragments: 15,
+            length: 5,
+            data:[5; 128],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![0, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
+    };
+
+    std::thread::spawn(move || {
+        my_drone.run();
+    });
+
+    packet_send_my_drone.send(packet.clone()).expect("Error sending the flood request...");
+
+    let packet_test = Packet {
+        pack_type: PacketType::Nack(Nack{
+            fragment_index: 10,
+            nack_type: NackType::UnexpectedRecipient(1),
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![2, 0], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
+    };
+
+    match packet_receive_test_drone.recv() {
+        Ok(received_packet) => {
+            assert_eq!(packet_test.clone(), received_packet.clone());
+            println!("Packet successfully received by the node {:?}", received_packet.pack_type);
+        }
+        Err(_) => println!("Timeout: No packet received."),
+    }
+}
+
+#[test]
+fn forward_msg_fragment_dropped() {
+    let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
+    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (packet_send_my_drone, packet_receive_my_drone) = crossbeam_channel::unbounded::<Packet>();
+    let (packet_send_test_drone, packet_receive_test_drone) = crossbeam_channel::unbounded::<Packet>();
+
+    // Mapping dei neighbour ai canali
+    let mut senders_test_drone = HashMap::new();
+    senders_test_drone.insert(1, packet_send_my_drone.clone());
+    let mut senders_my_drone = HashMap::new();
+    senders_my_drone.insert(0, packet_send_test_drone.clone());
+
+    let _ = MyDrone::new(
+        0,
+        sim_controller_send.clone(),
+        controller_receive.clone(),
+        packet_receive_test_drone.clone(),
+        senders_test_drone,
+        0.0
+    );
+
+    let mut my_drone = MyDrone::new(
+        1,
+        sim_controller_send,
+        controller_receive,
+        packet_receive_my_drone.clone(),
+        senders_my_drone,
+        1.0
+    );
+
+    let packet = Packet {
+        pack_type: PacketType::MsgFragment(Fragment{
+            fragment_index: 10,
+            total_n_fragments: 15,
+            length: 5,
+            data:[5; 128],
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
+    };
+
+    std::thread::spawn(move || {
+        my_drone.run();
+    });
+
+    packet_send_my_drone.send(packet.clone()).expect("Error sending the flood request...");
+
+    let packet_test = Packet {
+        pack_type: PacketType::Nack(Nack{
+            fragment_index: 10,
+            nack_type: NackType::Dropped,
+        }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![1, 0], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
+    };
+
+    match packet_receive_test_drone.recv() {
+        Ok(received_packet) => {
+            assert_eq!(packet_test.clone(), received_packet.clone());
+            println!("Packet successfully received by the node {:?}", received_packet.pack_type);
+        }
+        Err(_) => println!("Timeout: No packet received."),
     }
 }

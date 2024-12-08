@@ -7,7 +7,7 @@ use crossbeam_channel::RecvError;
 use wg_2024::controller::{DroneCommand, DroneEvent};
 use wg_2024::drone::Drone;
 use wg_2024::network::{SourceRoutingHeader};
-use wg_2024::packet::{FloodRequest, Packet, PacketType, NodeType, FloodResponse};
+use wg_2024::packet::{FloodRequest, Packet, PacketType, NodeType, FloodResponse, Ack};
 
 #[test]
 fn test_flood_request_handling() {
@@ -265,3 +265,58 @@ fn test_flood_request_already_received(){
     }
 }
 
+#[test]
+fn send_flood_response_to_neighbor() {
+    let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
+    let (_, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
+    let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
+
+    // Creazione del canale per il neighbor
+    let (neighbor_send, neighbor_recv) = crossbeam_channel::unbounded::<Packet>();
+
+    // Crea una mappa per i neighbors
+    let mut senders = HashMap::new();
+    senders.insert(2, neighbor_send); // Drone 2 come neighbor
+
+    let mut my_drone = MyDrone::new(
+        1,
+        sim_controller_send,
+        controller_receive,
+        packet_receive.clone(),
+        senders,
+        0.1,            // PDR valido
+    );
+
+    let packet = Packet {
+        pack_type: PacketType::FloodResponse(FloodResponse { flood_id: 0, path_trace: vec![(2, NodeType::Client), (1, NodeType::Drone), (0, NodeType::Drone)] }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 1,
+            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
+    };
+
+
+    std::thread::spawn(move || {
+        my_drone.run();
+    });
+
+    packet_send.send(packet.clone()).expect("Error sending the packet...");
+
+    let packet_test = Packet {
+        pack_type: PacketType::FloodResponse(FloodResponse { flood_id: 0, path_trace: vec![(2, NodeType::Client), (1, NodeType::Drone), (0, NodeType::Drone)] }),
+        routing_header: SourceRoutingHeader {
+            hop_index: 2,
+            hops: vec![0, 1, 2], // Percorso: Drone 1 -> Drone 2 (Drone 2 non è neighbor)
+        },
+        session_id: 1,
+    };
+
+    match neighbor_recv.recv() {
+        Ok(received_packet) => {
+            assert_eq!(packet_test.clone(), received_packet.clone());
+            println!("Packet successfully received by the node {:?}", received_packet.pack_type);
+        }
+        Err(_) => println!("Timeout: No packet received."),
+    }
+}
