@@ -26,7 +26,6 @@ pub enum DroneDebugOption {
 
 #[derive(Debug, Clone)]
 pub struct MyDrone {
-
     id: NodeId,
     sim_controller_send: Sender<DroneEvent>,                // Channel used to send commands to the SC
     sim_controller_recv: Receiver<DroneCommand>,            // Channel used to receive commands from the SC
@@ -36,7 +35,6 @@ pub struct MyDrone {
     state: DroneState,                                      // Drone state
     flood_id_vec: HashSet<(u64, u64)>,                      // HashSet storing ids of already received flood_id
     drone_debug_options: HashMap<DroneDebugOption, bool>,   // Map used to know which Debug options are active and which aren't
-
 }
 
 impl Drone for MyDrone {
@@ -79,10 +77,10 @@ impl Drone for MyDrone {
         loop {
             match self.state {
                 DroneState::Active => {
-                    select! {
-                        // Priorità al simulation controller
-                        recv(self.sim_controller_recv) -> command_res => {
-                            if let Ok(command) = command_res {
+                    select_biased! {
+                        // Usa try_recv per evitare il blocco
+                        default => {
+                            if let Ok(command) = self.sim_controller_recv.try_recv() {
                                 self.handle_command(command);
                             }
                         },
