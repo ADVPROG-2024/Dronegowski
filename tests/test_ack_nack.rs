@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use wg_2024::drone::Drone;
 use wg_2024::network::SourceRoutingHeader;
 use wg_2024::packet::{Ack, Nack, NackType, Packet, PacketType};
+use wg_2024::tests::generic_fragment_forward;
 
 #[test]
 fn send_ack_to_neighbor() {
@@ -97,4 +98,9 @@ fn send_nack_to_neighbor() {
     println!("Pacchetto ricevuto! Packet: {received_packet:?}");
     assert!(received_packet.is_ok());
     // assert_eq!(received_packet.unwrap(), nack_packet);
+}
+
+#[test]
+fn test_from_gh(){
+    generic_fragment_forward::<MyDrone>();
 }
