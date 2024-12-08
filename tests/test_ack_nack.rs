@@ -1,7 +1,7 @@
 mod common;
 
 use crossbeam_channel;
-use dronegowski::{Dronegowski};
+use dronegowski::{Dronegowski, DroneDebugOption};
 use std::collections::HashMap;
 use std::time::Duration;
 use wg_2024::controller::{DroneCommand, DroneEvent};
