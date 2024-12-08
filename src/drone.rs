@@ -77,7 +77,7 @@ impl Drone for MyDrone {
         loop {
             match self.state {
                 DroneState::Active => {
-                    select_biased! {
+                    select! {
                         // Priorità al simulation controller
                         recv(self.sim_controller_recv) -> command_res => {
                             if let Ok(command) = command_res {
@@ -170,6 +170,7 @@ impl MyDrone {
                     let previous_id = flood_request.path_trace.last().unwrap().clone();
                     flood_request.path_trace.push((self.id, NodeType::Drone));
                     if !self.packet_send.iter().any(|(id, _)| *id != previous_id.0) {
+                        //There is no other neighbour, proceed to send back a flood response
                         let flood_response = Packet::new_flood_response(
                             SourceRoutingHeader {
                                 hop_index: 0,
@@ -203,6 +204,7 @@ impl MyDrone {
                         }
                     }
                 } else {
+                    //The packet has already seen by this drone, proceed to send back a flood response
                     flood_request.path_trace.push((self.id, NodeType::Drone));
                     let flood_response = Packet::new_flood_response(
                         SourceRoutingHeader {
@@ -222,15 +224,13 @@ impl MyDrone {
                     );
                     self.forward_packet_safe(&flood_response);
                     println!("Drone {} correctly sent back a Flood Response because has already received this flood request",self.id);
-
                 }
             },
             _ => {
                 if let Some(node_id) = packet
                     .routing_header
                     .hops
-                    .get(packet.routing_header.hop_index)
-                {
+                    .get(packet.routing_header.hop_index){
                     if *node_id == self.id {
                         match packet.pack_type {
                             PacketType::Ack(_)
@@ -242,7 +242,8 @@ impl MyDrone {
                                 self.forward_packet_safe(&packet);
                             }
                             PacketType::MsgFragment(ref fragment) => {
-                                if self.state == DroneState::Crashed {
+                                //NON SONO SICURO DEL CONTROLLO SULLO STATO DEL DRONE
+                                if self.state == DroneState::Crashing {
                                     self.handle_forwarding_error(
                                         &packet,
                                         NackType::ErrorInRouting(
@@ -257,16 +258,18 @@ impl MyDrone {
                                     self.handle_forwarding_error(&packet, NackType::Dropped);
                                     self.sim_controller_send
                                         .send(DroneEvent::PacketDropped(packet.clone()));
-                                } else if let Err(nack) = self.forward_packet(packet.clone()) {
-                                    self.handle_forwarding_error(&packet, nack.nack_type);
+                                } else {
+                                    self.forward_packet_safe(&packet);
                                 }
                             }
                             _ => (),
                         }
-                    } else {
-                        self.forward_packet_safe(&packet);
                     }
                 }
+                else {
+                    self.handle_forwarding_error(&packet, NackType::UnexpectedRecipient(self.id));
+                }
+
             }
         }
     }
@@ -358,11 +361,13 @@ impl MyDrone {
                 self.sim_controller_send
                     .send(DroneEvent::ControllerShortcut(packet.clone()));
             }
+
+            //Error in send a MsgFragment, send back a NACK
             _ => {
                 let nack_packet = self.packet_nack(
                     packet,
                     Nack {
-                        fragment_index: 0, // oppure il valore appropriato
+                        fragment_index: packet.get_fragment_index(), // oppure il valore appropriato
                         nack_type,
                     },
                 );
