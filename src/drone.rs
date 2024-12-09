@@ -262,7 +262,7 @@ impl Dronegowski {
                                 }
                                 self.forward_packet_safe(&packet);
                             }
-                            PacketType::MsgFragment(ref fragment) => {
+                            PacketType::MsgFragment(ref _fragment) => {
                                 if self.state == DroneState::Crashing {
                                     self.handle_forwarding_error(
                                         &packet,
@@ -348,7 +348,7 @@ impl Dronegowski {
                         match next_node_channel.send(packet.clone()) {
                             Ok(()) => {
                                 self.sim_controller_send
-                                    .send(DroneEvent::PacketSent(packet.clone())).expect("Something wrong");
+                                    .send(DroneEvent::PacketSent(packet.clone()));
                                 Ok(())
                             }
                             Err(..) => {
