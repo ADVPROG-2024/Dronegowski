@@ -35,7 +35,7 @@ fn test_initialization() {
     }
     let mut handles = Vec::new();
 
-    // Running all the drones
+    //Running all the drones
     for drone in config.drone.clone().into_iter() {
         let (controller_drone_send, controller_drone_recv) = unbounded();
         controller_drones.insert(drone.id, controller_drone_send.clone());
@@ -62,23 +62,24 @@ fn test_initialization() {
         }));
     }
 
-    // emulate a short execution time
+    //Emulate a short execution time
     thread::sleep(std::time::Duration::from_secs(2));
 
-    // Simulating packet sending between the drones ( it fails because DroneIsDestination)
+    //Simulating packet sending between the drones (it fails because DroneIsDestination)
     test_send_packet_between_nodes(&config, &packet_channels);
 
-    // updating PDR of all drones
+    //Updating PDR of all drones
     test_command_set_pdr(&controller_drones);
 
-    // sending crash command to all drones
+    //Sending crash command to all drones
     test_crash_all(&controller_drones);
-
 }
+
 fn test_send_packet_between_nodes(
     config: &Config,
     packet_channels: &HashMap<NodeId, (Sender<Packet>, Receiver<Packet>)>,
-) {
+)
+{
     let packet = Packet {
         pack_type: (PacketType::MsgFragment(Fragment {
             fragment_index: 0,

@@ -343,7 +343,7 @@ impl Dronegowski {
                                 PacketType::Ack(_) => {
                                     if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
                                         println!(
-                                            "[Drone {} - Ack Debug] Ack sended to {}",
+                                            "[Drone {} - Ack Debug] Ack sent to {}",
                                             self.id, next_node
                                         );
                                     }
@@ -384,7 +384,7 @@ impl Dronegowski {
                     PacketType::Ack(_) => {
                         if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
                             println!(
-                                "[Drone {} - Ack Debug] Ack sended to Simulation Controller after error",
+                                "[Drone {} - Ack Debug] Ack sent to Simulation Controller after error",
                                 self.id
                             );
                         }
@@ -413,7 +413,7 @@ impl Dronegowski {
         if let Err(nack) = self.forward_packet(packet.clone()) {
             if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
                 println!(
-                    "[Drone {} - Ack Debug] Error {nack} in sending Ack!",
+                    "[Drone {} - Ack Debug] Error in sending Ack!",
                     self.id
                 );
             }

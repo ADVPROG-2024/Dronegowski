@@ -13,6 +13,7 @@ const TIMER: Duration = Duration::from_secs(5);
 
 #[test]
 fn send_ack_to_neighbor() {
+    //Create channel
     let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
     let (_send_controller, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
@@ -22,7 +23,7 @@ fn send_ack_to_neighbor() {
 
     //Create map for neighbors
     let mut senders = HashMap::new();
-    senders.insert(2, neighbor_send); //Drone 2 like neighbor
+    senders.insert(2, neighbor_send); //Drone 2 neighbor
 
     let mut my_drone = Dronegowski::new(
         1,
@@ -30,7 +31,7 @@ fn send_ack_to_neighbor() {
         controller_receive,
         packet_receive.clone(),
         senders,
-        0.1,            // valid PDR
+        0.1,            //Valid PDR
     );
 
     my_drone.set_debug_option_active(&DroneDebugOption::Ack);
@@ -39,7 +40,7 @@ fn send_ack_to_neighbor() {
         pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
         routing_header: SourceRoutingHeader {
             hop_index: 0,
-            hops: vec![1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
+            hops: vec![1, 2], //Path: Drone 1 -> Drone 2
         },
         session_id: 1,
     };
@@ -48,15 +49,13 @@ fn send_ack_to_neighbor() {
         my_drone.run();
     });
 
-    packet_send
-        .send(packet.clone())
-        .expect("Error sending the packet...");
+    packet_send.send(packet.clone()).expect("Error sending the packet...");
 
     let packet_test = Packet {
         pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![1, 2], // Path: Drone 1 -> Drone 2
+            hops: vec![1, 2], //Path: Drone 1 -> Drone 2
         },
         session_id: 1,
     };
@@ -72,16 +71,17 @@ fn send_ack_to_neighbor() {
 
 #[test]
 fn send_nack_to_neighbor() {
+    //Create channel
     let (sim_controller_send, _) = crossbeam_channel::unbounded::<DroneEvent>();
     let (_controller_send, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
 
-    // Creazione del canale per il neighbor
-    let (neighbor_send, neighbor_recv) = crossbeam_channel::unbounded::<Packet>();
+    //Create channel for the neighbor
+    let (neighbor_send, neighbor_receive) = crossbeam_channel::unbounded::<Packet>();
 
-    // Crea una mappa per i neighbors
+    //Create map for neighbors
     let mut senders = HashMap::new();
-    senders.insert(2, neighbor_send); // Drone 2 come neighbor
+    senders.insert(2, neighbor_send); //Drone 2 neighbor
 
     let mut my_drone = Dronegowski::new(
         1,
@@ -89,10 +89,8 @@ fn send_nack_to_neighbor() {
         controller_receive,
         packet_receive.clone(),
         senders,
-        0.1,            // valid PDR
+        0.1,            //Valid PDR
     );
-
-    my_drone.set_debug_option_active(&DroneDebugOption::Ack);
 
     let packet = Packet {
         pack_type: PacketType::Nack(Nack {
@@ -101,7 +99,7 @@ fn send_nack_to_neighbor() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 0,
-            hops: vec![1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
+            hops: vec![1, 2], //Path: Drone 1 -> Drone 2
         },
         session_id: 1,
     };
@@ -110,9 +108,7 @@ fn send_nack_to_neighbor() {
         my_drone.run();
     });
 
-    packet_send
-        .send(packet.clone())
-        .expect("Error sending the packet...");
+    packet_send.send(packet.clone()).expect("Error sending the packet...");
 
     let packet_test = Packet {
         pack_type: PacketType::Nack(Nack {
@@ -121,18 +117,16 @@ fn send_nack_to_neighbor() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 1,
-            hops: vec![1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
+            hops: vec![1, 2], //Path: Drone 1 -> Drone 2
         },
         session_id: 1,
     };
 
-    match neighbor_recv.recv() {
+    match neighbor_receive.recv_timeout(TIMER) {
         Ok(received_packet) => {
             assert_eq!(packet_test.clone(), received_packet.clone());
-            println!(
-                "Packet successfully received by the node {:?}",
-                received_packet.pack_type
-            );
+            println!("Packet {:?} successfully received by the node 2", received_packet.pack_type);
+
         }
         Err(_) => println!("Timeout: No packet received."),
     }
@@ -140,7 +134,8 @@ fn send_nack_to_neighbor() {
 
 #[test]
 fn forward_ack_no_neighbor() {
-    let (sim_controller_send, sim_controller_recv) = crossbeam_channel::unbounded::<DroneEvent>();
+    //Create channel
+    let (sim_controller_send, sim_controller_receive) = crossbeam_channel::unbounded::<DroneEvent>();
     let (_controller_send, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
 
@@ -149,8 +144,8 @@ fn forward_ack_no_neighbor() {
         sim_controller_send,
         controller_receive,
         packet_receive.clone(),
-        HashMap::new(), // No neighbor
-        0.1,            // valid PDR
+        HashMap::new(),     //No neighbor
+        0.1,            //Valid PDR
     );
 
     my_drone.set_debug_option_active(&DroneDebugOption::Ack);
@@ -159,7 +154,7 @@ fn forward_ack_no_neighbor() {
         pack_type: PacketType::Ack(Ack { fragment_index: 0 }),
         routing_header: SourceRoutingHeader {
             hop_index: 0,
-            hops: vec![1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
+            hops: vec![1, 2], //Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -168,27 +163,23 @@ fn forward_ack_no_neighbor() {
         my_drone.run();
     });
 
-    packet_send
-        .send(packet.clone())
-        .expect("Error sending the packet...");
+    packet_send.send(packet.clone()).expect("Error sending the packet...");
 
-    match sim_controller_recv.recv() {
+    match sim_controller_receive.recv_timeout(TIMER) {
         Ok(DroneEvent::ControllerShortcut(received_packet)) => {
             assert_eq!(packet.clone(), received_packet.clone());
-            println!(
-                "Packet successfully sent to Simulation Controller {:?}",
-                received_packet.pack_type
-            );
+            println!("Packet {:?} successfully sent to Simulation Controller", received_packet.pack_type);
         }
         _ => {
-            println!("There is a problem");
+            println!("Timeout: No packet received.");
         }
     }
 }
 
 #[test]
 fn forward_nack_no_neighbor() {
-    let (sim_controller_send, sim_controller_recv) = crossbeam_channel::unbounded::<DroneEvent>();
+    //Create channel
+    let (sim_controller_send, sim_controller_receive) = crossbeam_channel::unbounded::<DroneEvent>();
     let (_controller_send, controller_receive) = crossbeam_channel::unbounded::<DroneCommand>();
     let (packet_send, packet_receive) = crossbeam_channel::unbounded::<Packet>();
 
@@ -197,8 +188,8 @@ fn forward_nack_no_neighbor() {
         sim_controller_send,
         controller_receive,
         packet_receive.clone(),
-        HashMap::new(), // No neighbor
-        0.1,            // valid PDR
+        HashMap::new(),     //No neighbor
+        0.1,            //Valid PDR
     );
 
     let packet = Packet {
@@ -208,7 +199,7 @@ fn forward_nack_no_neighbor() {
         }),
         routing_header: SourceRoutingHeader {
             hop_index: 0,
-            hops: vec![1, 2], // Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
+            hops: vec![1, 2], //Path: Drone 1 -> Drone 2 (Drone 2 not neighbor)
         },
         session_id: 1,
     };
@@ -217,20 +208,15 @@ fn forward_nack_no_neighbor() {
         my_drone.run();
     });
 
-    packet_send
-        .send(packet.clone())
-        .expect("Error sending the packet...");
+    packet_send.send(packet.clone()).expect("Error sending the packet...");
 
-    match sim_controller_recv.recv() {
+    match sim_controller_receive.recv_timeout(TIMER) {
         Ok(DroneEvent::ControllerShortcut(received_packet)) => {
             assert_eq!(packet.clone(), received_packet.clone());
-            println!(
-                "Packet successfully sent to Simulation Controller {:?}",
-                received_packet.pack_type
-            );
+            println!("Packet {:?} successfully sent to Simulation Controller", received_packet.pack_type);
         }
         _ => {
-            println!("There is a problem");
+            println!("Timeout: No packet received.");
         }
     }
 }
