@@ -90,23 +90,23 @@ impl Drone for Dronegowski {
                 DroneState::Crashing => {
                     match self.packet_recv.recv() {
                         Ok(packet) => {
-                            println!("Drone {} processing packet in Crashing state", self.id);
+                            log::info!("Drone {} processing packet in Crashing state", self.id);
                             self.handle_packet(packet);
                         }
                         Err(_) => {
-                            println!("Drone {} has completed crashing. Transitioning to Crashed state.", self.id);
+                            log::info!("Drone {} has completed crashing. Transitioning to Crashed state.", self.id);
                             self.state = DroneState::Crashed;
                             break;
                         }
                     }
                 }
                 DroneState::Crashed => {
-                    println!("Drone {} is in Crashed state. Exiting loop", self.id);
+                    log::info!("Drone {} is in Crashed state. Exiting loop", self.id);
                     break;
                 }
             }
         }
-        println!("Drone {} has terminated execution", self.id);
+        log::info!("Drone {} has terminated execution", self.id);
     }
 }
 
@@ -156,7 +156,7 @@ impl Dronegowski {
         }
         else {
             self.pdr = pdr;
-            println!("Drone {}: PDR updated to {}", self.id, pdr);
+            log::info!("Drone {}: PDR updated to {}", self.id, pdr);
 
         }
     }
@@ -197,7 +197,7 @@ impl Dronegowski {
                             },
                         );
                         self.forward_packet_safe(&flood_response);
-                        println!("Drone {} correctly sent back a Flood Response because has no neighbour",self.id);
+                        log::info!("Drone {} correctly sent back a Flood Response because has no neighbour",self.id);
                     } else {
                         for neighbour in self.packet_send.clone() {
                             if neighbour.0 != previous_id.0 {
@@ -205,7 +205,7 @@ impl Dronegowski {
                                     packet.clone(),
                                     neighbour.clone(),
                                 );
-                                println!(
+                                log::info!(
                                     "Drone {} correctly sent the Flood Request to neighbor with {} id",
                                     self.id, neighbour.0
                                 );
@@ -232,7 +232,7 @@ impl Dronegowski {
                         },
                     );
                     self.forward_packet_safe(&flood_response);
-                    println!("Drone {} correctly sent back a Flood Response because has already received this flood request",self.id);
+                    log::info!("Drone {} correctly sent back a Flood Response because has already received this flood request",self.id);
                 }
             }
             _ => {
@@ -301,14 +301,14 @@ impl Dronegowski {
                 self.set_pdr(pdr);
             }
             DroneCommand::Crash => {
-                println!("Drone {} entering Crashing state.", self.id);
+                log::info!("Drone {} entering Crashing state.", self.id);
                 self.set_drone_state(DroneState::Crashing);
             }
             DroneCommand::AddSender(node_id, sender) => {
                 self.add_neighbor(node_id, sender);
             }
             DroneCommand::RemoveSender(node_id) => {
-                println!("Drone {} removing sender {}.", self.id, node_id);
+                log::info!("Drone {} removing sender {}.", self.id, node_id);
                 self.remove_neighbor(&node_id)
             }
         }
