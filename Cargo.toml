@@ -9,7 +9,7 @@ rustastic-drone = { git = "https://github.com/Rustastic/RustasticDrone.git" }
 #flypath
 rolling_drone = { git = "https://github.com/giorebecchi/RollingDrone.git" }
 lockheedrustin-drone = { git = "https://github.com/Lockheed-Rustin/drone.git" }
-rusty_drones = { git = "https://github.com/matteo-dinoia/rusty-drones.git", branch = "main" }
+#rusty_drones = { git = "https://github.com/matteo-dinoia/rusty-drones.git", branch = "main" }
 #RustBuster
 skylink = { git = "https://github.com/Suge42/Skylink_drone.git" }
 #Bry_w_locie
