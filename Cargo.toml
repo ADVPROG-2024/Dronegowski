@@ -5,16 +5,16 @@ edition = "2021"
 
 [dependencies]
 wg_2024 = { git = "https://github.com/WGL-2024/WGL_repo_2024.git", features = ["debug", "serialize"] }
-# rustastic-drone = { git = "https://github.com/Rustastic/RustasticDrone.git" }
-#flypath
-# rolling_drone = { git = "https://github.com/giorebecchi/RollingDrone.git" }
-# lockheedrustin-drone = { git = "https://github.com/Lockheed-Rustin/drone.git" }
-# rusty_drones = { git = "https://github.com/matteo-dinoia/rusty-drones.git", branch = "main" }
-#RustBuster
-# skylink = { git = "https://github.com/Suge42/Skylink_drone.git" }
-#Bry_w_locie
-#null pointer
-#rust do it
+#rustastic-drone = { git = "https://github.com/Rustastic/RustasticDrone.git" }
+#flyPath = { git = "https://github.com/panigiove/FlyPath.git" }
+#rolling_drone = { git = "https://github.com/giorebecchi/RollingDrone.git" }
+#lockheedrustin-drone = { git = "https://github.com/Lockheed-Rustin/drone.git" }
+#rusty_drones = { git = "https://github.com/rusty-drone-2024/rusty-drone.git" }
+#rust_do_it = { git = "https://github.com/RustDoIt/Drone.git" }
+#skylink = { git = "https://github.com/Suge42/Skylink_drone.git" }
+#bry_w_locie = { git = "https://github.com/Seregno/Public_Bry_w_locie" }
+#bagel_bomber = { git = "https://github.com/daw-dev/bagel-bomber.git" }
+#null-pointer-drone = { git = "https://github.com/The-Null-Pointer-Patrol/null-pointer-drone.git" }
 toml = "0.8.19"
 crossbeam-channel = "0.5.13"
 rand = "0.9.0-beta.1"
