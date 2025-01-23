@@ -57,6 +57,11 @@ impl Drone for Dronegowski {
     }
 
     fn run(&mut self) {
+        log::info!(
+            "Drone {} entering the run loop in state {:?}",
+            self.id,
+            self.state
+        );
         loop {
             match self.state {
                 DroneState::Active => {
@@ -262,7 +267,6 @@ impl Dronegowski {
             }
             DroneCommand::Crash => {
                 log::info!("Drone {} entering Crashing state.", self.id);
-                println!("Sta crashando il drone!");
                 self.set_drone_state(DroneState::Crashing);
             }
             DroneCommand::AddSender(node_id, sender) => {
