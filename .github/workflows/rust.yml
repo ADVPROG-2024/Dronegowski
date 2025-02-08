@@ -18,5 +18,17 @@ jobs:
     - uses: actions/checkout@v4
     - name: Build
       run: cargo build --verbose
-    - name: Run specific tests
+    - name: Run specific tests - test_drone
       run: cargo test --test test_drone --verbose
+    - name: Run specific tests - test_forwarding
+      run: cargo test --test test_forwarding --verbose
+    - name: Run specific tests - test_ack_nack
+      run: cargo test --test test_ack_nack --verbose
+    - name: Run specific tests - test_flooding
+      run: cargo test --test test_flooding --verbose
+    - name: Run specific tests - test_sc_command
+      run: cargo test --test test_sc_command --verbose
+    - name: Run specific tests - test_initialization
+      run: cargo test --test test_initialization --verbose
+
+    
