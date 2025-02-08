@@ -26,17 +26,15 @@ pub enum DroneDebugOption {
 
 #[derive(Debug, Clone)]
 pub struct MyDrone {
-
     id: NodeId,
-    sim_controller_send: Sender<DroneEvent>,                // Channel used to send commands to the SC
-    sim_controller_recv: Receiver<DroneCommand>,            // Channel used to receive commands from the SC
-    packet_recv: Receiver<Packet>,                          // Channel used to receive packets from nodes
-    packet_send: HashMap<NodeId, Sender<Packet>>,           // Map containing the sending channels of neighbour nodes
-    pdr: f32,                                               // PDR
-    state: DroneState,                                      // Drone state
-    flood_id_vec: HashSet<(u64, u64)>,                      // HashSet storing ids of already received flood_id
-    drone_debug_options: HashMap<DroneDebugOption, bool>,   // Map used to know which Debug options are active and which aren't
-
+    sim_controller_send: Sender<DroneEvent>, // Channel used to send commands to the SC
+    sim_controller_recv: Receiver<DroneCommand>, // Channel used to receive commands from the SC
+    packet_recv: Receiver<Packet>,           // Channel used to receive packets from nodes
+    packet_send: HashMap<NodeId, Sender<Packet>>, // Map containing the sending channels of neighbour nodes
+    pdr: f32,                                     // PDR
+    state: DroneState,                            // Drone state
+    flood_id_vec: HashSet<(u64, u64)>, // HashSet storing ids of already received flood_id
+    drone_debug_options: HashMap<DroneDebugOption, bool>, // Map used to know which Debug options are active and which aren't
 }
 
 impl Drone for MyDrone {
@@ -154,7 +152,7 @@ impl MyDrone {
 
     pub fn set_pdr(&mut self, pdr: f32) -> Result<(), String> {
         if pdr > 0.0 && pdr < 1.0 {
-            println!("Drone {}: updated PDR, {} -> {}", self.id, self.pdr, pdr);
+            log::info!("Drone {}: updated PDR, {} -> {}", self.id, self.pdr, pdr);
             self.pdr = pdr;
             return Ok(());
         }
@@ -163,6 +161,11 @@ impl MyDrone {
     }
 
     fn handle_packet(&mut self, mut packet: Packet) {
+        log::info!(
+            "Drone {}: ricevuto un pacchetto {:?}",
+            self.id,
+            packet.clone()
+        );
         match packet.pack_type {
             PacketType::FloodRequest(ref mut flood_request) => {
                 if self
@@ -227,19 +230,20 @@ impl MyDrone {
                     self.forward_packet_safe(&flood_response);
                     println!("Drone {} correctly sent back a Flood Response because has already received this flood request",self.id);
                 }
-            },
+            }
             _ => {
                 if let Some(node_id) = packet
                     .routing_header
                     .hops
-                    .get(packet.routing_header.hop_index){
+                    .get(packet.routing_header.hop_index)
+                {
                     if *node_id == self.id {
                         match packet.pack_type {
                             PacketType::Ack(_)
                             | PacketType::Nack(_)
                             | PacketType::FloodResponse(_) => {
                                 if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
-                                    println!("[Drone {}] attempts to send Ack", self.id)
+                                    log::info!("[Drone {}] attempts to send Ack", self.id)
                                 }
                                 self.forward_packet_safe(&packet);
                             }
@@ -267,11 +271,9 @@ impl MyDrone {
                             _ => (),
                         }
                     }
-                }
-                else {
+                } else {
                     self.handle_forwarding_error(&packet, NackType::UnexpectedRecipient(self.id));
                 }
-
             }
         }
     }
@@ -282,7 +284,7 @@ impl MyDrone {
                 self.set_pdr(pdr).expect("Error in PDR setting");
             }
             DroneCommand::Crash => {
-                println!("Drone {} entering Crashing state.", self.id);
+                log::info!("Drone {} entering Crashing state.", self.id);
                 self.set_drone_state(DroneState::Crashing);
             }
             DroneCommand::AddSender(node_id, sender) => {
@@ -290,13 +292,12 @@ impl MyDrone {
                     .expect("Sender already present!");
             }
             DroneCommand::RemoveSender(node_id) => {
-                println!("Drone {} removing sender {}.", self.id, node_id);
+                log::info!("Drone {} removing sender {}.", self.id, node_id);
                 self.remove_neighbor(&node_id)
                     .expect("Sender is not in self.sender");
             }
         }
     }
-
 
     // Method used to send packet to the next hop
     fn forward_packet(&self, mut packet: Packet) -> Result<(), Nack> {
@@ -320,9 +321,10 @@ impl MyDrone {
                 match self.packet_send.get(next_node) {
                     Some(next_node_channel) => {
                         if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
-                            println!(
+                            log::info!(
                                 "[Drone {} - Ack Debug] Ack sent correctly to Node {}",
-                                self.id, next_node
+                                self.id,
+                                next_node
                             );
                         }
                         match next_node_channel.send(packet.clone()) {
@@ -351,13 +353,12 @@ impl MyDrone {
         }
     }
 
-
     fn handle_forwarding_error(&self, packet: &Packet, nack_type: NackType) {
         // if the packet is a nack/send/floodResponse it's sent to the sim controller, otherwise a nack_packet is created and sent
         match packet.pack_type {
             PacketType::Ack(_) | PacketType::Nack(_) | PacketType::FloodResponse(_) => {
                 if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
-                    println!(
+                    log::info!(
                         "[Drone {} - Ack Debug] Ack Packet Dropped sent to Simulation Controller",
                         self.id
                     );
@@ -383,7 +384,7 @@ impl MyDrone {
     fn forward_packet_safe(&self, packet: &Packet) {
         if let Err(nack) = self.forward_packet(packet.clone()) {
             if self.clone().in_drone_debug_options(DroneDebugOption::Ack) {
-                println!(
+                log::info!(
                     "[Drone {} - Ack Debug] Error {nack} in sending Ack!",
                     self.id
                 );
@@ -433,11 +434,9 @@ impl MyDrone {
     pub fn set_debug_option_active(&mut self, debug_option: &DroneDebugOption) {
         if let Some(option) = self.drone_debug_options.get_mut(&debug_option) {
             *option = true;
-            println!("Debug: {:?} Enabled", debug_option);
+            log::info!("Debug: {:?} Enabled", debug_option);
         } else {
-            eprintln!(
-                "Error: Debug option {debug_option:?} doesn't exist."
-            );
+            eprintln!("Error: Debug option {debug_option:?} doesn't exist.");
         }
     }
 
@@ -445,9 +444,7 @@ impl MyDrone {
         if let Some(option) = self.drone_debug_options.get_mut(&debug_option) {
             *option = false;
         } else {
-            eprintln!(
-                "Error: Debug option {debug_option:?} doesn't exist.",
-            );
+            eprintln!("Error: Debug option {debug_option:?} doesn't exist.",);
         }
     }
 
@@ -479,10 +476,7 @@ impl MyDrone {
             self.packet_send.remove(node_id);
             Ok(())
         } else {
-            Err(format!(
-                "Sender for node {node_id} not stored in the map!"
-            ))
+            Err(format!("Sender for node {node_id} not stored in the map!"))
         }
     }
-
 }
