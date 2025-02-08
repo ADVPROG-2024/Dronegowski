@@ -214,6 +214,7 @@ impl Dronegowski {
                 }
             }
             _ => {
+                log::info!("Drone {}: Received packet {:?}", self.id, packet);
                 if let Some(node_id) = packet
                     .routing_header
                     .hops
@@ -227,7 +228,9 @@ impl Dronegowski {
                                 self.forward_packet_safe(&packet);
                             }
                             PacketType::MsgFragment(ref _fragment) => {
+                                log::info!("Drone {}: Received fragment {:?}", self.id, _fragment);
                                 if self.state == DroneState::Crashing {
+                                    log::warn!("Drone {}: Drone is crashed, sending Nack", self.id);
                                     self.handle_forwarding_error(
                                         &packet,
                                         NackType::ErrorInRouting(
@@ -239,6 +242,7 @@ impl Dronegowski {
                                         ),
                                     );
                                 } else if self.should_drop_packet() {
+                                    log::warn!("Drone {}: packet dropped, sending Nack", self.id);
                                     self.handle_forwarding_error(&packet, NackType::Dropped);
                                     self.sim_controller_send
                                         .send(DroneEvent::PacketDropped(packet.clone()))
@@ -247,9 +251,10 @@ impl Dronegowski {
                                     self.forward_packet_safe(&packet);
                                 }
                             }
-                            _ => (),
+                            _ => {log::warn!("Drone {}: Received Unrecognized packet", self.id);},
                         }
                     } else {
+                        log::warn!("Drone {}: Received packet not directed to me", self.id);
                         self.handle_forwarding_error(
                             &packet,
                             NackType::UnexpectedRecipient(self.id),
@@ -300,6 +305,7 @@ impl Dronegowski {
                 match self.packet_send.get(next_node) {
                     Some(next_node_channel) => match next_node_channel.send(packet.clone()) {
                         Ok(()) => {
+                            log::info!("Drone {}: packet forwarded to next hop {}", self.id, next_node);
                             self.sim_controller_send
                                 .send(DroneEvent::PacketSent(packet.clone()));
                             Ok(())
@@ -309,10 +315,12 @@ impl Dronegowski {
                         }
                     },
                     // None if the next hop is not a drone's neighbour
-                    None => Err(Nack {
+                    None => {
+                        log::warn!("Drone {}: next hop is not a neighbour", self.id);
+                        Err(Nack {
                         fragment_index,
                         nack_type: NackType::ErrorInRouting(*next_node),
-                    }),
+                    })},
                 }
             }
             // Next_hop returns None if the drone is the final destination
