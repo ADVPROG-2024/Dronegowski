@@ -24,7 +24,7 @@ pub struct Dronegowski {
     packet_send: HashMap<NodeId, Sender<Packet>>, //Map containing the sending channels of neighbour nodes
     pdr: f32,                                     //PDR
     state: DroneState,                            //Drone state
-    flood_id_vec: HashSet<(u64, u64)>,            //HashSet storing ids of already received flood_id
+    flood_id_vec: HashSet<(u64, NodeId)>,         //HashSet storing ids of already received flood_id
 }
 
 impl Drone for Dronegowski {
@@ -152,7 +152,7 @@ impl Dronegowski {
             PacketType::FloodRequest(ref mut flood_request) => {
                 if self
                     .flood_id_vec
-                    .insert((flood_request.flood_id, packet.session_id))
+                    .insert((flood_request.flood_id, flood_request.initiator_id))
                 {
                     let previous_id = flood_request.path_trace.last().unwrap().clone();
                     flood_request.path_trace.push((self.id, NodeType::Drone));
@@ -251,7 +251,9 @@ impl Dronegowski {
                                     self.forward_packet_safe(&packet);
                                 }
                             }
-                            _ => {log::warn!("Drone {}: Received Unrecognized packet", self.id);},
+                            _ => {
+                                log::warn!("Drone {}: Received Unrecognized packet", self.id);
+                            }
                         }
                     } else {
                         log::warn!("Drone {}: Received packet not directed to me", self.id);
@@ -305,7 +307,11 @@ impl Dronegowski {
                 match self.packet_send.get(next_node) {
                     Some(next_node_channel) => match next_node_channel.send(packet.clone()) {
                         Ok(()) => {
-                            log::info!("Drone {}: packet forwarded to next hop {}", self.id, next_node);
+                            log::info!(
+                                "Drone {}: packet forwarded to next hop {}",
+                                self.id,
+                                next_node
+                            );
                             self.sim_controller_send
                                 .send(DroneEvent::PacketSent(packet.clone()));
                             Ok(())
@@ -318,9 +324,10 @@ impl Dronegowski {
                     None => {
                         log::warn!("Drone {}: next hop is not a neighbour", self.id);
                         Err(Nack {
-                        fragment_index,
-                        nack_type: NackType::ErrorInRouting(*next_node),
-                    })},
+                            fragment_index,
+                            nack_type: NackType::ErrorInRouting(*next_node),
+                        })
+                    }
                 }
             }
             // Next_hop returns None if the drone is the final destination
